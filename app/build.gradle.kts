@@ -13,14 +13,27 @@ android {
         applicationId = "com.example.supacomobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 7
+        versionName = "1.7"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystoreFile = rootProject.file("release.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("SUPACO_STORE_PASSWORD") ?: "supaco123"
+                keyAlias = System.getenv("SUPACO_KEY_ALIAS") ?: "supaco"
+                keyPassword = System.getenv("SUPACO_KEY_PASSWORD") ?: "supaco123"
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

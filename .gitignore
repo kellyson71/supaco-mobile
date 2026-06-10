@@ -16,3 +16,6 @@ local.properties
 kapt_*.log
 kapt_*.txt
 .kotlin/
+*.keystore
+*.jks
+keystore.properties
