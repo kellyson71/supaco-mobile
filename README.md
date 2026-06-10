@@ -14,7 +14,38 @@ A pergunta que todo estudante faz — _"posso faltar hoje?"_ — respondida com 
 ![Android](https://img.shields.io/badge/Android%207.0+-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
+<br/>
+
+[![Download APK](https://img.shields.io/badge/⬇%20Baixar%20APK-v1.7-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kellyson71/supaco-mobile/releases/latest)
+
 </div>
+
+---
+
+## Baixar e instalar (Android)
+
+O jeito mais simples é baixar o APK direto pelo celular:
+
+1. Abra a página de **[Releases](https://github.com/kellyson71/supaco-mobile/releases/latest)** no navegador do seu celular
+2. Na seção **Assets**, toque em **`supaco-mobile-v1.7.apk`** para baixar
+3. Abra o arquivo baixado (pela notificação ou pelo app de Arquivos)
+4. Na primeira vez, o Android vai pedir para **permitir a instalação de fontes desconhecidas** — toque em **Configurações** e ative a permissão para o seu navegador/gerenciador de arquivos
+5. Volte e toque em **Instalar**
+6. Abra o app e faça login com sua **matrícula e senha do SUAP IFRN**
+
+> Requer **Android 7.0+** (API 24). O APK tem cerca de **17 MB**.
+
+### É seguro?
+
+Sim. Alguns pontos para você ter tranquilidade:
+
+- **Código aberto** — todo o código está aqui no repositório, você pode auditar exatamente o que o app faz.
+- **APK assinado** — cada release é assinado digitalmente com a mesma chave, então o Android garante que as atualizações vêm da mesma origem.
+- **Suas credenciais ficam só no seu aparelho**, guardadas com `EncryptedSharedPreferences` (armazenamento criptografado do Android). Nada é enviado para servidores de terceiros.
+- **Comunicação direta com o SUAP** — o app fala apenas com a API oficial `suap.ifrn.edu.br`, por HTTPS. Não há intermediários.
+- **Sem rastreadores, sem anúncios, sem analytics.**
+
+> O aviso de "fonte desconhecida" do Android é o padrão para qualquer app instalado fora da Play Store — não significa que o app é malicioso, apenas que não passou pela loja do Google.
 
 ---
 
@@ -111,7 +142,9 @@ app/src/main/java/com/example/supacomobile/
 
 ---
 
-## Como rodar
+## Rodar a partir do código (desenvolvedores)
+
+> Se você só quer usar o app, baixe o APK pela seção [Baixar e instalar](#baixar-e-instalar-android) acima.
 
 ```bash
 git clone https://github.com/kellyson71/supaco-mobile.git
