@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="supaco_settings.xml"/>
+        <include domain="sharedpref" path="faltas_vault.xml"/>
+        <include domain="sharedpref" path="faltas_history.xml"/>
+        <include domain="database" path="supaco-db"/>
+        <include domain="database" path="supaco-db-shm"/>
+        <include domain="database" path="supaco-db-wal"/>
+        <exclude domain="sharedpref" path="supaco_secure_prefs.xml"/>
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="supaco_settings.xml"/>
+        <include domain="sharedpref" path="faltas_vault.xml"/>
+        <include domain="sharedpref" path="faltas_history.xml"/>
+        <include domain="database" path="supaco-db"/>
+        <include domain="database" path="supaco-db-shm"/>
+        <include domain="database" path="supaco-db-wal"/>
+        <exclude domain="sharedpref" path="supaco_secure_prefs.xml"/>
+    </device-transfer>
+</data-extraction-rules>

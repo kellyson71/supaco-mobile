@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Supaco Mobile</string>
+
+    <string name="shortcut_verdict_short">Posso faltar?</string>
+    <string name="shortcut_verdict_long">Posso faltar hoje?</string>
+    <string name="shortcut_horarios_short">Horários</string>
+    <string name="shortcut_horarios_long">Ver meus horários</string>
+    <string name="shortcut_materias_short">Matérias</string>
+    <string name="shortcut_materias_long">Minhas matérias</string>
+
+    <string name="widget_status_description">Resumo das suas faltas na tela inicial</string>
+    <string name="widget_verdict_description">Veredito rápido: posso faltar hoje?</string>
+    <string name="widget_horarios_description">Aula de agora, a próxima e a semana toda</string>
+    <string name="notification_channel_name">Alertas de faltas</string>
+    <string name="notification_channel_description">Avisos quando uma matéria fica perigosa de faltar</string>
+</resources>

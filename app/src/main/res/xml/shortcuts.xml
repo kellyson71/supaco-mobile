@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="verdict"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_dice"
+        android:shortcutShortLabel="@string/shortcut_verdict_short"
+        android:shortcutLongLabel="@string/shortcut_verdict_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.supacomobile"
+            android:targetClass="com.example.supacomobile.MainActivity">
+            <extra android:name="dest" android:value="verdict" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="horarios"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_calendar"
+        android:shortcutShortLabel="@string/shortcut_horarios_short"
+        android:shortcutLongLabel="@string/shortcut_horarios_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.supacomobile"
+            android:targetClass="com.example.supacomobile.MainActivity">
+            <extra android:name="dest" android:value="horarios" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="materias"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_book"
+        android:shortcutShortLabel="@string/shortcut_materias_short"
+        android:shortcutLongLabel="@string/shortcut_materias_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.supacomobile"
+            android:targetClass="com.example.supacomobile.MainActivity">
+            <extra android:name="dest" android:value="materias" />
+        </intent>
+    </shortcut>
+
+</shortcuts>
