@@ -1,5 +1,6 @@
 package com.example.supacomobile
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -49,7 +51,9 @@ import com.example.supacomobile.data.local.BiometricChoice
 import com.example.supacomobile.data.local.SettingsManager
 import com.example.supacomobile.data.local.ThemeMode
 import com.example.supacomobile.data.local.TokenManager
+import com.example.supacomobile.theme.AppBackground
 import com.example.supacomobile.theme.SupacoMobileTheme
+import com.example.supacomobile.theme.resolvePalette
 import com.example.supacomobile.ui.auth.LoginScreen
 import com.example.supacomobile.ui.components.OrgShape
 import com.example.supacomobile.ui.components.ShapeContainer
@@ -96,13 +100,39 @@ class MainActivity : FragmentActivity() {
         setContent {
             val themeMode by settings.themeMode.collectAsStateWithLifecycle()
             val dynamicColor by settings.dynamicColor.collectAsStateWithLifecycle()
+            val paletteId by settings.paletteId.collectAsStateWithLifecycle()
+            val customSeed by settings.customSeed.collectAsStateWithLifecycle()
+            val customStyle by settings.customStyle.collectAsStateWithLifecycle()
+            val pureBlack by settings.pureBlack.collectAsStateWithLifecycle()
+            val bgEnabled by settings.backgroundEnabled.collectAsStateWithLifecycle()
+            val bgOpacity by settings.backgroundOpacity.collectAsStateWithLifecycle()
+            val bgVersion by settings.backgroundVersion.collectAsStateWithLifecycle()
+
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
 
-            SupacoMobileTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) {
+            val palette = remember(paletteId, customSeed, customStyle, pureBlack) {
+                resolvePalette(paletteId, customSeed, customStyle, pureBlack)
+            }
+
+            val background = remember(bgEnabled, bgVersion) {
+                if (bgEnabled && settings.hasBackgroundFile()) {
+                    BitmapFactory.decodeFile(settings.backgroundFile.absolutePath)
+                        ?.asImageBitmap()
+                } else null
+            }?.let { AppBackground(it, bgOpacity) }
+
+            SupacoMobileTheme(
+                darkTheme = darkTheme,
+                dynamicColor = dynamicColor,
+                seedColor = palette.seed,
+                paletteStyle = palette.style,
+                amoled = palette.amoled,
+                background = background,
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
