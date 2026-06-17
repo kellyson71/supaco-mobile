@@ -1,30 +1,25 @@
 package com.example.supacomobile.theme
 
 import android.os.Build
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-)
+import com.materialkolor.PaletteStyle
+import com.materialkolor.rememberDynamicColorScheme
 
 @Immutable
 data class VerdictColors(
@@ -65,20 +60,41 @@ val LocalVerdictColors = staticCompositionLocalOf { LightVerdictColors }
 val MaterialTheme.verdictColors: VerdictColors
     @Composable get() = LocalVerdictColors.current
 
+/** Imagem de fundo personalizada já decodificada + intensidade (0 = invisível, 1 = sem véu). */
+@Immutable
+data class AppBackground(
+    val bitmap: ImageBitmap,
+    val opacity: Float,
+)
+
 @Composable
 fun SupacoMobileTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    seedColor: Color = Color(0xFF6750A4),
+    paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
+    amoled: Boolean = false,
+    background: AppBackground? = null,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
+    val useAmoled = amoled && darkTheme
+    val baseScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val scheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (useAmoled) scheme.copy(background = Color.Black, surface = Color.Black) else scheme
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        else -> rememberDynamicColorScheme(
+            seedColor = seedColor,
+            isDark = darkTheme,
+            isAmoled = useAmoled,
+            style = paletteStyle,
+        )
     }
+
+    // Quando há fundo personalizado, deixamos o background do tema transparente
+    // para a imagem aparecer atrás dos Scaffolds (os cards continuam opacos/legíveis).
+    val colorScheme = if (background != null) baseScheme.copy(background = Color.Transparent) else baseScheme
 
     val verdictColors = if (darkTheme) DarkVerdictColors else LightVerdictColors
 
@@ -86,7 +102,27 @@ fun SupacoMobileTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
-            content = content
-        )
+        ) {
+            if (background != null) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Image(
+                        bitmap = background.bitmap,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // Véu sobre a foto, com a cor de fundo original do tema, para
+                    // manter legibilidade. Quanto maior a opacidade escolhida, mais a foto aparece.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(baseScheme.background.copy(alpha = 1f - background.opacity)),
+                    )
+                    content()
+                }
+            } else {
+                content()
+            }
+        }
     }
 }
