@@ -7,10 +7,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.supacomobile"
+    namespace = "io.github.kellyson71.supaco"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.supacomobile"
+        applicationId = "io.github.kellyson71.supaco"
         minSdk = 24
         targetSdk = 36
         versionCode = 8

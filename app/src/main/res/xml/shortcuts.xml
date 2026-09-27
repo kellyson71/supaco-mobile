@@ -9,8 +9,8 @@
         android:shortcutLongLabel="@string/shortcut_verdict_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.example.supacomobile"
-            android:targetClass="com.example.supacomobile.MainActivity">
+            android:targetPackage="io.github.kellyson71.supaco"
+            android:targetClass="io.github.kellyson71.supaco.MainActivity">
             <extra android:name="dest" android:value="verdict" />
         </intent>
     </shortcut>
@@ -23,8 +23,8 @@
         android:shortcutLongLabel="@string/shortcut_horarios_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.example.supacomobile"
-            android:targetClass="com.example.supacomobile.MainActivity">
+            android:targetPackage="io.github.kellyson71.supaco"
+            android:targetClass="io.github.kellyson71.supaco.MainActivity">
             <extra android:name="dest" android:value="horarios" />
         </intent>
     </shortcut>
@@ -37,8 +37,8 @@
         android:shortcutLongLabel="@string/shortcut_materias_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.example.supacomobile"
-            android:targetClass="com.example.supacomobile.MainActivity">
+            android:targetPackage="io.github.kellyson71.supaco"
+            android:targetClass="io.github.kellyson71.supaco.MainActivity">
             <extra android:name="dest" android:value="materias" />
         </intent>
     </shortcut>
