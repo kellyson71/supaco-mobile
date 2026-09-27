@@ -25,7 +25,6 @@ val appModule = module {
 
     single { TokenManager(androidContext()) }
     single { com.example.supacomobile.data.local.SettingsManager(androidContext()) }
-    single { com.example.supacomobile.data.local.FaltasVault(androidContext()) }
     single { com.example.supacomobile.data.local.FaltasHistory(androidContext()) }
     single { AuthInterceptor(get()) }
     single { TokenAuthenticator(get()) }

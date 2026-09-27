@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Só preferências visuais vão para o backup. Tokens, boletim e horários são
+     dados sensíveis e recuperáveis com um novo login, então ficam de fora. -->
 <full-backup-content>
     <include domain="sharedpref" path="supaco_settings.xml"/>
-    <include domain="sharedpref" path="faltas_vault.xml"/>
-    <include domain="sharedpref" path="faltas_history.xml"/>
-    <include domain="database" path="supaco-db"/>
-    <include domain="database" path="supaco-db-shm"/>
-    <include domain="database" path="supaco-db-wal"/>
 </full-backup-content>

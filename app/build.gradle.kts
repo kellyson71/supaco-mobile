@@ -102,7 +102,6 @@ dependencies {
 
   // Navigation
   implementation(libs.androidx.navigation.compose)
-  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
   // Dependency Injection (Koin)
   implementation(libs.koin.android)
