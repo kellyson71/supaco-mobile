@@ -35,6 +35,8 @@ class FaltasHistory(context: Context) {
         return (todayEpochDay() - lastIncrease).toInt().coerceAtLeast(0)
     }
 
+    fun clear() = prefs.edit(commit = true) { clear() }
+
     private companion object {
         const val KEY_LAST_TOTAL = "last_total"
         const val KEY_LAST_INCREASE = "last_increase_day"

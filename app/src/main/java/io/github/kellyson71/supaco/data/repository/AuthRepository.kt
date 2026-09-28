@@ -1,35 +1,29 @@
 package io.github.kellyson71.supaco.data.repository
 
-import io.github.kellyson71.supaco.data.local.AppDatabase
 import io.github.kellyson71.supaco.data.local.TokenManager
 import io.github.kellyson71.supaco.data.model.LoginRequest
+import io.github.kellyson71.supaco.data.remote.NotStudentException
 import io.github.kellyson71.supaco.data.remote.SuapApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import io.github.kellyson71.supaco.data.session.SessionManager
 
 class AuthRepository(
     private val suapApi: SuapApi,
     private val tokenManager: TokenManager,
-    private val appDatabase: AppDatabase
+    private val profileRepository: ProfileRepository,
+    private val sessionManager: SessionManager,
 ) {
-    suspend fun login(matricula: String, senha: String): Result<Unit> {
-        return try {
-            val response = suapApi.login(LoginRequest(matricula, senha))
-            tokenManager.saveToken(response.access, response.refresh ?: "")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+    suspend fun login(matricula: String, senha: String): Result<Unit> = runCatching {
+        val tokens = suapApi.login(LoginRequest(matricula.trim(), senha))
+        tokenManager.saveToken(tokens.access, tokens.refresh)
+        val profile = runCatching { profileRepository.refresh() }
+            .onFailure { tokenManager.clear() }
+            .getOrThrow()
+        if (!profile.isAluno) {
+            tokenManager.clear()
+            throw NotStudentException()
         }
+        sessionManager.onLoggedIn()
     }
 
-    suspend fun logout() {
-        tokenManager.clear()
-        withContext(Dispatchers.IO) {
-            appDatabase.clearAllTables()
-        }
-    }
-
-    fun isLoggedIn(): Boolean {
-        return tokenManager.getAccessToken() != null
-    }
+    suspend fun logout() = sessionManager.logout()
 }

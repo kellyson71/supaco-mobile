@@ -1,17 +1,20 @@
 package io.github.kellyson71.supaco.data.remote
 
-import io.github.kellyson71.supaco.data.local.TokenManager
+import io.github.kellyson71.supaco.data.local.TokenStore
 import okhttp3.Interceptor
 import okhttp3.Response
 
 class AuthInterceptor(
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenStore,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         val accessToken = tokenManager.getAccessToken()
 
-        if (accessToken == null || originalRequest.header("Authorization") != null) {
+        if (accessToken == null ||
+            originalRequest.isTokenEndpoint() ||
+            originalRequest.header("Authorization") != null
+        ) {
             return chain.proceed(originalRequest)
         }
 
@@ -22,3 +25,5 @@ class AuthInterceptor(
         return chain.proceed(authenticatedRequest)
     }
 }
+
+internal fun okhttp3.Request.isTokenEndpoint(): Boolean = url.encodedPath.startsWith("/api/token/")

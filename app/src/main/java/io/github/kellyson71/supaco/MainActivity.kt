@@ -1,6 +1,17 @@
 package io.github.kellyson71.supaco
 
-import android.graphics.BitmapFactory
+import android.os.SystemClock
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavDestination.Companion.hasRoute
+import io.github.kellyson71.supaco.data.session.SessionManager
+import io.github.kellyson71.supaco.data.session.SessionState
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -50,7 +61,6 @@ import androidx.navigation.compose.rememberNavController
 import io.github.kellyson71.supaco.data.local.BiometricChoice
 import io.github.kellyson71.supaco.data.local.SettingsManager
 import io.github.kellyson71.supaco.data.local.ThemeMode
-import io.github.kellyson71.supaco.data.local.TokenManager
 import io.github.kellyson71.supaco.theme.AppBackground
 import io.github.kellyson71.supaco.theme.SupacoMobileTheme
 import io.github.kellyson71.supaco.theme.resolvePalette
@@ -73,11 +83,16 @@ object SettingsRoute
 
 private enum class Gate { ASK_BIOMETRIC, LOCKED, UNLOCKED }
 
+/** Tempo em background depois do qual a biometria é pedida de novo. */
+private const val RELOCK_AFTER_MS = 5 * 60 * 1000L
+
 class MainActivity : FragmentActivity() {
 
-    private val tokenManager: TokenManager by inject()
     private val settings: SettingsManager by inject()
+    private val sessionManager: SessionManager by inject()
     private var currentShortcutDest by mutableStateOf<String?>(null)
+    private var gate by mutableStateOf(Gate.UNLOCKED)
+    private var backgroundedAt = 0L
 
     companion object {
         const val EXTRA_DEST = "dest"
@@ -88,14 +103,23 @@ class MainActivity : FragmentActivity() {
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         ) == BiometricManager.BIOMETRIC_SUCCESS
 
+    private fun initialGate(): Gate {
+        val loggedIn = sessionManager.state.value == SessionState.LOGGED_IN
+        return when {
+            !loggedIn || !canUseBiometric() -> Gate.UNLOCKED
+            settings.biometricChoice.value == BiometricChoice.ENABLED -> Gate.LOCKED
+            settings.biometricChoice.value == BiometricChoice.UNSET -> Gate.ASK_BIOMETRIC
+            else -> Gate.UNLOCKED
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val hasToken = tokenManager.getAccessToken() != null
-        val biometricAvailable = canUseBiometric()
         currentShortcutDest = intent.getStringExtra(EXTRA_DEST)
+        if (savedInstanceState == null) gate = initialGate()
 
         setContent {
             val themeMode by settings.themeMode.collectAsStateWithLifecycle()
@@ -107,6 +131,8 @@ class MainActivity : FragmentActivity() {
             val bgEnabled by settings.backgroundEnabled.collectAsStateWithLifecycle()
             val bgOpacity by settings.backgroundOpacity.collectAsStateWithLifecycle()
             val bgVersion by settings.backgroundVersion.collectAsStateWithLifecycle()
+            val modoSerio by settings.modoSerio.collectAsStateWithLifecycle()
+            val sessionState by sessionManager.state.collectAsStateWithLifecycle()
 
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -118,81 +144,94 @@ class MainActivity : FragmentActivity() {
                 resolvePalette(paletteId, customSeed, customStyle, pureBlack)
             }
 
-            val background = remember(bgEnabled, bgVersion) {
-                if (bgEnabled && settings.hasBackgroundFile()) {
-                    BitmapFactory.decodeFile(settings.backgroundFile.absolutePath)
-                        ?.asImageBitmap()
+            // Fundo decodificado fora da main thread (a imagem já é salva reduzida)
+            val backgroundBitmap by produceState<ImageBitmap?>(null, bgEnabled, bgVersion) {
+                value = if (bgEnabled) {
+                    withContext(Dispatchers.IO) { settings.loadBackgroundBitmap()?.asImageBitmap() }
                 } else null
-            }?.let { AppBackground(it, bgOpacity) }
+            }
+            val background = backgroundBitmap?.let { AppBackground(it, bgOpacity) }
 
-            SupacoMobileTheme(
-                darkTheme = darkTheme,
-                dynamicColor = dynamicColor,
-                seedColor = palette.seed,
-                paletteStyle = palette.style,
-                amoled = palette.amoled,
-                background = background,
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+            CompositionLocalProvider(LocalModoSerio provides modoSerio) {
+                SupacoMobileTheme(
+                    darkTheme = darkTheme,
+                    dynamicColor = dynamicColor,
+                    seedColor = palette.seed,
+                    paletteStyle = palette.style,
+                    amoled = palette.amoled,
+                    background = background,
                 ) {
-                    var gate by remember {
-                        mutableStateOf(
-                            when {
-                                !hasToken || !biometricAvailable -> Gate.UNLOCKED
-                                settings.biometricChoice.value == BiometricChoice.ENABLED -> Gate.LOCKED
-                                settings.biometricChoice.value == BiometricChoice.UNSET -> Gate.ASK_BIOMETRIC
-                                else -> Gate.UNLOCKED
-                            }
-                        )
-                    }
-
-                    when (gate) {
-                        Gate.ASK_BIOMETRIC -> BiometricAskScreen(
-                            onEnable = {
-                                showBiometricPrompt(
-                                    onSuccess = {
-                                        settings.setBiometricChoice(BiometricChoice.ENABLED)
-                                        gate = Gate.UNLOCKED
-                                    },
-                                    onError = {
-                                        settings.setBiometricChoice(BiometricChoice.DISABLED)
-                                        Toast.makeText(this, "Não foi possível ativar a biometria.", Toast.LENGTH_SHORT).show()
-                                        gate = Gate.UNLOCKED
-                                    },
-                                )
-                            },
-                            onSkip = {
-                                settings.setBiometricChoice(BiometricChoice.DISABLED)
-                                gate = Gate.UNLOCKED
-                            },
-                        )
-
-                        Gate.LOCKED -> {
-                            LaunchedEffect(Unit) {
-                                showBiometricPrompt(onSuccess = { gate = Gate.UNLOCKED }, onError = {})
-                            }
-                            LockedScreen(
-                                onRetry = {
-                                    showBiometricPrompt(onSuccess = { gate = Gate.UNLOCKED }, onError = {})
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        when (gate) {
+                            Gate.ASK_BIOMETRIC -> BiometricAskScreen(
+                                onEnable = {
+                                    showBiometricPrompt(
+                                        onSuccess = {
+                                            settings.setBiometricChoice(BiometricChoice.ENABLED)
+                                            gate = Gate.UNLOCKED
+                                        },
+                                        onError = {
+                                            settings.setBiometricChoice(BiometricChoice.DISABLED)
+                                            Toast.makeText(this, "Não foi possível ativar a biometria.", Toast.LENGTH_SHORT).show()
+                                            gate = Gate.UNLOCKED
+                                        },
+                                    )
                                 },
-                                onUseLogin = {
-                                    tokenManager.clear()
+                                onSkip = {
+                                    settings.setBiometricChoice(BiometricChoice.DISABLED)
                                     gate = Gate.UNLOCKED
-                                    recreate()
                                 },
                             )
-                        }
 
-                        Gate.UNLOCKED -> SupacoApp(
-                            startDestination = if (hasToken) DashboardRoute else LoginRoute,
-                            initialDest = currentShortcutDest,
-                        )
+                            Gate.LOCKED -> {
+                                LaunchedEffect(Unit) {
+                                    showBiometricPrompt(onSuccess = { gate = Gate.UNLOCKED }, onError = {})
+                                }
+                                LockedScreen(
+                                    onRetry = {
+                                        showBiometricPrompt(onSuccess = { gate = Gate.UNLOCKED }, onError = {})
+                                    },
+                                    onUseLogin = {
+                                        // Outra pessoa pode estar entrando: apaga tudo da sessão atual
+                                        lifecycleScope.launch {
+                                            sessionManager.logout()
+                                            gate = Gate.UNLOCKED
+                                        }
+                                    },
+                                )
+                            }
+
+                            Gate.UNLOCKED -> SupacoApp(
+                                sessionState = sessionState,
+                                initialDest = currentShortcutDest,
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) backgroundedAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val away = backgroundedAt > 0 && SystemClock.elapsedRealtime() - backgroundedAt > RELOCK_AFTER_MS
+        if (away &&
+            gate == Gate.UNLOCKED &&
+            sessionManager.state.value == SessionState.LOGGED_IN &&
+            settings.biometricChoice.value == BiometricChoice.ENABLED &&
+            canUseBiometric()
+        ) {
+            gate = Gate.LOCKED
+        }
+        backgroundedAt = 0L
     }
 
     private fun showBiometricPrompt(onSuccess: () -> Unit, onError: () -> Unit) {
@@ -315,8 +354,21 @@ private fun LockedScreen(onRetry: () -> Unit, onUseLogin: () -> Unit) {
 }
 
 @Composable
-fun SupacoApp(startDestination: Any, initialDest: String? = null) {
+fun SupacoApp(sessionState: SessionState, initialDest: String? = null) {
     val navController = rememberNavController()
+    val loggedIn = sessionState == SessionState.LOGGED_IN
+
+    // Sessão encerrada (logout, refresh recusado): volta ao login de qualquer tela
+    LaunchedEffect(loggedIn) {
+        if (!loggedIn && navController.currentDestination?.hasRoute(LoginRoute::class) == false) {
+            navController.navigate(LoginRoute) {
+                popUpTo(navController.graph.id) { inclusive = true }
+            }
+        }
+    }
+
+    // Fixado na primeira composição: mudanças de sessão navegam pelo efeito acima
+    val startDestination = remember { if (loggedIn) DashboardRoute else LoginRoute }
 
     NavHost(
         navController = navController,
@@ -336,11 +388,6 @@ fun SupacoApp(startDestination: Any, initialDest: String? = null) {
             DashboardScreen(
                 initialDest = initialDest,
                 onOpenSettings = { navController.navigate(SettingsRoute) },
-                onLogout = {
-                    navController.navigate(LoginRoute) {
-                        popUpTo(DashboardRoute) { inclusive = true }
-                    }
-                },
             )
         }
 

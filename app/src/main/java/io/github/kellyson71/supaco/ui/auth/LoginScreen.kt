@@ -5,7 +5,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -49,7 +54,7 @@ fun LoginContent(
     var matricula by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     var senhaVisivel by remember { mutableStateOf(false) }
-    var lembrarDeMim by remember { mutableStateOf(true) }
+    val submit = { if (!uiState.isLoading) onLoginClick(matricula, senha) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -100,8 +105,8 @@ fun LoginContent(
                 onValueChange = { matricula = it.filter { c -> c.isDigit() }.take(14) },
                 label = { Text("Matrícula") },
                 leadingIcon = { Icon(Icons.Rounded.AccountCircle, null) },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Next),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
             )
@@ -122,25 +127,14 @@ fun LoginContent(
                     }
                 },
                 visualTransformation = if (senhaVisivel) VisualTransformation.None else PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
             )
 
             Spacer(Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Switch(checked = lembrarDeMim, onCheckedChange = { lembrarDeMim = it })
-                Text(
-                    "Lembrar de mim",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
 
             AnimatedVisibility(visible = uiState.error != null) {
                 uiState.error?.let { err ->
@@ -158,7 +152,7 @@ fun LoginContent(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onLoginClick(matricula, senha) },
+                onClick = submit,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 enabled = !uiState.isLoading,
                 shape = MaterialTheme.shapes.extraLarge,
@@ -178,36 +172,16 @@ fun LoginContent(
 
             Spacer(Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                HorizontalDivider(modifier = Modifier.weight(1f))
-                Text(
-                    " ou ",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                HorizontalDivider(modifier = Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            FilledTonalButton(
-                onClick = { onLoginClick(matricula, senha) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                enabled = !uiState.isLoading,
-                shape = MaterialTheme.shapes.extraLarge,
-            ) {
-                Icon(Icons.Rounded.AccountBalance, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Entrar com o SUAP", style = MaterialTheme.typography.labelLarge)
-            }
-
+            Text(
+                "Sua senha vai direto para o SUAP (suap.ifrn.edu.br) por HTTPS e não fica guardada no aparelho.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(32.dp))
 
             Text(
-                "App não-oficial · feito por aluno, pra aluno",
+                "App não-oficial, sem vínculo com o IFRN · feito por aluno, pra aluno",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
