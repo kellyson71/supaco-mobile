@@ -206,6 +206,8 @@ fun DashboardScreen(
                             periodos = uiState.periodos,
                             selectedPeriodo = uiState.selectedPeriodo,
                             onSelectPeriodo = { viewModel.selectPeriodo(it) },
+                            isLoading = uiState.isLoading,
+                            faltasNovas = uiState.faltasNovas,
                             onOpenDetail = { viewModel.openDetail(it) },
                         )
                         Tab.HORARIOS -> if (uiState.error != null && uiState.materias.isEmpty()) {

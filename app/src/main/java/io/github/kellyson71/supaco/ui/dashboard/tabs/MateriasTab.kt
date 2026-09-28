@@ -1,5 +1,36 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import io.github.kellyson71.supaco.ui.components.SkeletonShape
+import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.components.moodFor
+import io.github.kellyson71.supaco.ui.components.pressScale
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.OdometerText
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
+import io.github.kellyson71.supaco.ui.utils.shimmerEffect
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.*
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,8 +66,12 @@ fun MateriasTab(
     periodos: List<io.github.kellyson71.supaco.data.model.PeriodoLetivo> = emptyList(),
     selectedPeriodo: io.github.kellyson71.supaco.data.model.PeriodoLetivo? = null,
     onSelectPeriodo: (io.github.kellyson71.supaco.data.model.PeriodoLetivo) -> Unit = {},
+    isLoading: Boolean = false,
+    faltasNovas: Set<String> = emptySet(),
 ) {
-    val listState = rememberLazyListState()
+    val haptics = rememberHaptics()
+    // Cards que já fizeram a animação de entrada (a barra enche só na primeira vez)
+    val seen = remember { mutableSetOf<String>() }
 
     var filtro by remember { mutableStateOf(Filtro.TODAS) }
     var searchActive by remember { mutableStateOf(false) }
@@ -60,7 +95,16 @@ fun MateriasTab(
         topBar = {
             TopAppBar(
                 title = {
-                    if (searchActive) {
+                    // A busca se abre a partir da lupa; o título volta ao fechar
+                    AnimatedContent(
+                        targetState = searchActive,
+                        transitionSpec = {
+                            (fadeIn(Motion.calma(220)) + expandHorizontally(Motion.calma(300), expandFrom = Alignment.End)) togetherWith
+                                fadeOut(Motion.calma(120)) using SizeTransform(clip = false)
+                        },
+                        label = "search_title",
+                    ) { searching ->
+                    if (searching) {
                         LaunchedEffect(Unit) { focusRequester.requestFocus() }
                         TextField(
                             value = query,
@@ -82,6 +126,7 @@ fun MateriasTab(
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
+                    }
                 },
                 actions = {
                     // Seletor de período letivo (semestres anteriores)
@@ -89,7 +134,17 @@ fun MateriasTab(
                         var menuOpen by remember { mutableStateOf(false) }
                         Box {
                             TextButton(onClick = { menuOpen = true }) {
-                                Text(selectedPeriodo.label, fontWeight = FontWeight.SemiBold)
+                                // Período "vira" na vertical: mais novo desce, mais antigo sobe
+                                AnimatedContent(
+                                    targetState = selectedPeriodo,
+                                    transitionSpec = {
+                                        val newer = periodos.indexOf(targetState) < periodos.indexOf(initialState)
+                                        val dir = if (newer) -1 else 1
+                                        (slideInVertically(Motion.viva()) { it * dir } + fadeIn()) togetherWith
+                                            (slideOutVertically(Motion.calma(200)) { -it * dir } + fadeOut())
+                                    },
+                                    label = "periodo_label",
+                                ) { p -> Text(p.label, fontWeight = FontWeight.SemiBold) }
                                 Icon(Icons.Rounded.ArrowDropDown, contentDescription = "Trocar período")
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -118,18 +173,41 @@ fun MateriasTab(
                             searchActive = true
                         }
                     }) {
-                        Icon(
-                            if (searchActive) Icons.Rounded.Close else Icons.Rounded.Search,
-                            contentDescription = if (searchActive) "Fechar busca" else "Buscar",
-                        )
+                        // Lupa ↔ X girando
+                        AnimatedContent(
+                            targetState = searchActive,
+                            transitionSpec = {
+                                (fadeIn(Motion.calma(200)) + scaleIn(Motion.viva(), initialScale = 0.6f)) togetherWith
+                                    (fadeOut(Motion.calma(120)) + scaleOut(targetScale = 0.6f))
+                            },
+                            label = "search_icon",
+                        ) { searching ->
+                            Icon(
+                                if (searching) Icons.Rounded.Close else Icons.Rounded.Search,
+                                contentDescription = if (searching) "Fechar busca" else "Buscar",
+                            )
+                        }
                     }
                 },
             )
         },
     ) { padding ->
+        // Trocar de período: a lista sai para um lado e a nova entra do outro
+        AnimatedContent(
+            targetState = selectedPeriodo,
+            transitionSpec = {
+                val newer = periodos.indexOf(targetState) < periodos.indexOf(initialState)
+                val dir = if (newer) -1 else 1
+                (slideInHorizontally(Motion.calma(320)) { it / 4 * dir } + fadeIn(Motion.calma(250))) togetherWith
+                    (slideOutHorizontally(Motion.calma(250)) { -it / 4 * dir } + fadeOut(Motion.calma(150)))
+            },
+            modifier = Modifier.fillMaxSize().padding(padding),
+            label = "periodo_lista",
+        ) { _ ->
+        val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 120.dp),
         ) {
             item {
@@ -140,7 +218,10 @@ fun MateriasTab(
                     Filtro.entries.forEachIndexed { i, f ->
                         SegmentedButton(
                             selected = filtro == f,
-                            onClick = { filtro = f },
+                            onClick = {
+                                if (filtro != f) haptics.tick()
+                                filtro = f
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = i, count = Filtro.entries.size),
                             icon = {
                                 SegmentedButtonDefaults.Icon(active = filtro == f) {
@@ -154,14 +235,23 @@ fun MateriasTab(
                 }
             }
 
-            if (filtered.isEmpty()) {
-                item {
+            if (isLoading && materias.isEmpty()) {
+                items(4) { i ->
+                    MateriaCardSkeleton(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).enterOnce(i))
+                }
+            } else if (filtered.isEmpty()) {
+                item(key = "vazio") {
                     Box(
                         modifier = Modifier.fillParentMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            ShapeContainer(OrgShape.CLOVER, 80.dp, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant) {
+                            // "Respira" — o trevo respira junto
+                            ShapeContainer(
+                                OrgShape.CLOVER, 80.dp,
+                                MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant,
+                                breathe = true,
+                            ) {
                                 Icon(Icons.Rounded.SentimentSatisfied, null, modifier = Modifier.size(40.dp))
                             }
                             Spacer(Modifier.height(12.dp))
@@ -170,14 +260,45 @@ fun MateriasTab(
                     }
                 }
             } else {
-                items(filtered, key = { it.codigoDiario }) { m ->
+                itemsIndexed(filtered, key = { _, m -> m.codigoDiario }) { index, m ->
+                    val firstTime = remember(m.codigoDiario) { seen.add(m.codigoDiario) }
                     MateriaCard(
                         materia = m,
                         onClick = { onOpenDetail(m.codigoDiario) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        faltaNova = m.codigoDiario in faltasNovas,
+                        animateEntrance = firstTime,
+                        modifier = Modifier
+                            .animateItem(
+                                fadeInSpec = Motion.calma(250),
+                                placementSpec = Motion.viva(),
+                                fadeOutSpec = Motion.calma(150),
+                            )
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .then(if (firstTime) Modifier.enterOnce(index) else Modifier),
                     )
                 }
             }
+        }
+        }
+    }
+}
+
+@Composable
+private fun MateriaCardSkeleton(modifier: Modifier = Modifier) {
+    Card(modifier = modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                SkeletonShape(OrgShape.FLOWER, 48.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.fillMaxWidth(0.7f).height(14.dp).shimmerEffect(CircleShape))
+                    Box(Modifier.fillMaxWidth(0.35f).height(10.dp).shimmerEffect(CircleShape))
+                }
+                Box(Modifier.size(44.dp, 40.dp).shimmerEffect(MaterialTheme.shapes.extraSmall))
+            }
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(4.dp).shimmerEffect(CircleShape))
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth(0.4f).height(10.dp).shimmerEffect(CircleShape))
         }
     }
 }
@@ -193,6 +314,8 @@ fun MateriaCard(
     materia: MateriaDisplay,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    faltaNova: Boolean = false,
+    animateEntrance: Boolean = false,
 ) {
     val vc = MaterialTheme.verdictColors
     val (container, onContainer, solid) = when (materia.status) {
@@ -208,9 +331,14 @@ fun MateriaCard(
     }
     val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
 
+    val interaction = remember { MutableInteractionSource() }
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        interactionSource = interaction,
+        modifier = modifier
+            .fillMaxWidth()
+            .pressScale(interaction)
+            .then(if (faltaNova) Modifier.sheenOnce(solid) else Modifier),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -223,6 +351,7 @@ fun MateriaCard(
                     size = 48.dp,
                     containerColor = container,
                     contentColor = solid,
+                    mood = moodFor(materia.status),
                 ) {
                     Icon(materia.icone, null, modifier = Modifier.size(24.dp))
                 }
@@ -234,7 +363,17 @@ fun MateriaCard(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                     )
-                    if (materia.dia != "—") {
+                    if (faltaNova) {
+                        Surface(color = solid, shape = CircleShape, modifier = Modifier.padding(top = 2.dp)) {
+                            Text(
+                                "falta nova",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = container,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            )
+                        }
+                    } else if (materia.dia != "—") {
                         Text(
                             "${materia.diaAbbr} · ${materia.horaInicio}",
                             style = MaterialTheme.typography.bodySmall,
@@ -252,11 +391,12 @@ fun MateriaCard(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     ) {
-                        Text(
+                        OdometerText(
                             if (materia.restantes <= 0) "0" else "${materia.restantes}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = solid,
+                            increasing = false,
                         )
                         Text(
                             "livre",
@@ -272,8 +412,12 @@ fun MateriaCard(
 
             // Progress bar
             val freqValue = (materia.frequencia / 100.0).toFloat().coerceIn(0f, 1f)
+            // Enche de 0 até o valor só na primeira vez que o card aparece
+            val reduce = LocalReduceMotion.current
+            val fill = remember { Animatable(if (animateEntrance && !reduce) 0f else freqValue) }
+            LaunchedEffect(freqValue) { fill.animateTo(freqValue, tween(700, delayMillis = 120, easing = Motion.EmphasizedDecelerate)) }
             LinearProgressIndicator(
-                progress = { freqValue },
+                progress = { fill.value },
                 modifier = Modifier.fillMaxWidth(),
                 color = solid,
                 trackColor = container,
@@ -333,6 +477,29 @@ fun MateriaCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/** Faixa de luz que atravessa o card uma vez — chama atenção para o que mudou. */
+private fun Modifier.sheenOnce(color: androidx.compose.ui.graphics.Color): Modifier = composed {
+    val reduce = LocalReduceMotion.current
+    val t = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        delay(350)
+        t.animateTo(1f, tween(1100, easing = Motion.Standard))
+    }
+    drawWithContent {
+        drawContent()
+        if (t.value in 0.001f..0.999f) {
+            val x = size.width * (t.value * 1.6f - 0.3f)
+            drawRect(
+                Brush.linearGradient(
+                    listOf(androidx.compose.ui.graphics.Color.Transparent, color.copy(alpha = 0.22f), androidx.compose.ui.graphics.Color.Transparent),
+                    start = Offset(x - size.width * 0.25f, 0f),
+                    end = Offset(x + size.width * 0.25f, size.height),
+                ),
+            )
         }
     }
 }
