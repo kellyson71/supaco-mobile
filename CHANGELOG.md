@@ -33,6 +33,23 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - Links para código-fonte, política de privacidade e reportar problema.
 - Suporte a preenchimento automático de senha no login.
 
+### Movimento e interação
+- Sistema de movimento com três personalidades (viva, calma, firme): quanto pior o status, mais lento e pesado.
+- Vocabulário de vibração consistente (tique, alegre, pesado, confirmar, rejeitar).
+- **Formas vivas**: as formas orgânicas respiram, giram devagar, murcham conforme o risco e se transformam umas nas outras.
+- **Veredito em três atos**: o dado para na face certa (6 = pode faltar, 1 = nem pense), a cor se espalha a partir dele, a forma vira a do status e a barra de "gasto do dia" mostra as aulas de hoje consumindo as faltas livres. O suspense só acontece na primeira consulta do dia; tocar pula.
+- Home: frase do dia, pull-to-refresh temático, skeleton no formato real, contagem até a próxima aula, aviso de faltas novas e semana com indicador deslizante e swipe.
+- Matérias: filtros e busca sem "pulos", troca de período com direção, selo "falta nova" e barras que enchem na primeira vez.
+- Detalhe: anel de frequência animado; no simulador, as pétalas murcham a cada falta e a flor vira pedra ao passar do limite; a média simulada pula ao cruzar 60.
+- Horários: timeline acompanha o relógio (aula atual pulsando, trecho vivido preenchido, aulas passadas esmaecidas).
+- Perfil: anel de frequência geral, chama do streak que cresce, rank com efeito de carimbo.
+- Conquistas: anúncio quando uma nova é desbloqueada, títulos ocultos embaralhados, giro ao tocar.
+- **Resumo do semestre** em telas estilo stories, com imagem final para compartilhar.
+- Login com entrada em cascata, flor girando enquanto valida e campos que chacoalham na senha errada.
+- Troca de tema com transição suave de cores; fundo de tela entra com fade.
+- Tile com o veredito do dia no subtítulo; widget de veredito abre direto o veredito; notificação com botão "Ver matéria".
+- Opção **Reduzir animações** (também segue a configuração do sistema).
+
 ### Removido
 - Botão "Entrar com o SUAP" (fazia o mesmo que "Entrar") e o switch "Lembrar de mim" (não fazia nada).
 - Opção de idioma inglês (não havia tradução).
