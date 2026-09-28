@@ -191,6 +191,8 @@ fun DashboardScreen(
                                     isLoading = uiState.isLoading || uiState.isSyncing,
                                     lastSyncAt = uiState.lastSyncAt,
                                     syncWarning = uiState.syncWarning,
+                                    faltasNovas = uiState.faltasNovas,
+                                    onDismissFaltasNovas = { viewModel.marcarFaltasVistas() },
                                     onSync = { viewModel.sync() },
                                     onOpenDetail = { viewModel.openDetail(it) },
                                     onAskVerdict = { viewModel.openVerdict(it) },

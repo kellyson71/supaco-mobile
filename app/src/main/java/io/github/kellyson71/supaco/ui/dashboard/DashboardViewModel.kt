@@ -2,6 +2,7 @@ package io.github.kellyson71.supaco.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.kellyson71.supaco.data.local.CacheStore
 import io.github.kellyson71.supaco.data.local.FaltasHistory
 import io.github.kellyson71.supaco.data.model.BoletimItem
 import io.github.kellyson71.supaco.data.model.PeriodoLetivo
@@ -40,6 +41,8 @@ data class DashboardUiState(
     val isSearchingServers: Boolean = false,
     val searchServersError: String? = null,
     val hasMoreServers: Boolean = false,
+    /** Diários com falta nova desde a última vez que o aluno olhou. */
+    val faltasNovas: Set<String> = emptySet(),
 ) {
     val isCurrentPeriodo: Boolean get() = selectedPeriodo != null && selectedPeriodo == periodos.firstOrNull()
 }
@@ -49,6 +52,7 @@ class DashboardViewModel(
     private val authRepository: AuthRepository,
     private val academicRepository: AcademicRepository,
     private val faltasHistory: FaltasHistory,
+    private val cacheStore: CacheStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -61,6 +65,7 @@ class DashboardViewModel(
     private var serversCampus: String? = null
 
     init {
+        _uiState.update { it.copy(faltasNovas = cacheStore.unseenChanges) }
         loadJob = viewModelScope.launch { load() }
     }
 
@@ -101,7 +106,10 @@ class DashboardViewModel(
         if (_uiState.value.selectedPeriodo != selecionado) return null
 
         result.onSuccess { items ->
-            if (isCurrent) faltasHistory.registerSync(items.sumOf { it.numeroFaltas })
+            if (isCurrent) {
+                faltasHistory.registerSync(items.sumOf { it.numeroFaltas })
+                detectarFaltasNovas(items)
+            }
             showBoletim(items, isCurrent)
             _uiState.update { it.copy(syncWarning = null) }
         }.onFailure { e ->
@@ -117,6 +125,24 @@ class DashboardViewModel(
             profileRepository.cached()?.let { p -> _uiState.update { it.copy(profile = p) } }
         }
         return result.exceptionOrNull()
+    }
+
+    private fun detectarFaltasNovas(items: List<BoletimItem>) {
+        val anteriores = cacheStore.lastFaltas
+        if (anteriores.isNotEmpty()) {
+            val novas = items
+                .filter { item -> anteriores[item.codigoDiario]?.let { it < item.numeroFaltas } == true }
+                .map { it.codigoDiario }
+            if (novas.isNotEmpty()) cacheStore.unseenChanges = cacheStore.unseenChanges + novas
+        }
+        cacheStore.lastFaltas = items.associate { it.codigoDiario to it.numeroFaltas }
+        _uiState.update { it.copy(faltasNovas = cacheStore.unseenChanges) }
+    }
+
+    /** O aluno viu a falta nova desta matéria (ou todas, com null). */
+    fun marcarFaltasVistas(id: String? = null) {
+        cacheStore.unseenChanges = if (id == null) emptySet() else cacheStore.unseenChanges - id
+        _uiState.update { it.copy(faltasNovas = cacheStore.unseenChanges) }
     }
 
     private suspend fun showBoletim(items: List<BoletimItem>, isCurrent: Boolean) {
@@ -160,7 +186,10 @@ class DashboardViewModel(
         }
     }
 
-    fun openDetail(id: String) = _uiState.update { it.copy(detailMateriaId = id) }
+    fun openDetail(id: String) {
+        if (id in _uiState.value.faltasNovas) marcarFaltasVistas(id)
+        _uiState.update { it.copy(detailMateriaId = id) }
+    }
     fun closeDetail() = _uiState.update { it.copy(detailMateriaId = null) }
     fun openVerdict(id: String) = _uiState.update { it.copy(verdictMateriaId = id) }
     fun closeVerdict() = _uiState.update { it.copy(verdictMateriaId = null) }

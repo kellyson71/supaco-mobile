@@ -1,5 +1,46 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.NotificationImportant
+import androidx.compose.material3.AssistChip
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
+import io.github.kellyson71.supaco.data.ScheduleData
+import io.github.kellyson71.supaco.data.local.CacheStore
+import io.github.kellyson71.supaco.ui.components.PulseRing
+import io.github.kellyson71.supaco.ui.components.SkeletonShape
+import io.github.kellyson71.supaco.ui.components.SupacoPullToRefreshBox
+import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.components.moodFor
+import io.github.kellyson71.supaco.ui.components.pressScale
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.OdometerText
+import io.github.kellyson71.supaco.ui.motion.orSnap
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
+import io.github.kellyson71.supaco.ui.utils.shimmerEffect
+import org.koin.compose.koinInject
 import androidx.compose.animation.core.animateFloat
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.animation.core.animateFloatAsState
@@ -46,6 +87,8 @@ fun HomeTab(
     isLoading: Boolean,
     lastSyncAt: Long?,
     syncWarning: String?,
+    faltasNovas: Set<String>,
+    onDismissFaltasNovas: () -> Unit,
     onSync: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onAskVerdict: (String) -> Unit,
@@ -64,15 +107,28 @@ fun HomeTab(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "Olá, ${nomeUsual.split(" ").first()}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Column {
+                        Text(
+                            "Olá, ${nomeUsual.split(" ").first()}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            fraseDoDia(temAulaHoje = materiaHoje != null, serio = LocalModoSerio.current),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
                 actions = {
+                    // Ícone gira enquanto a rede trabalha
+                    val spin = if (isLoading && !LocalReduceMotion.current) {
+                        rememberInfiniteTransition(label = "sync").animateFloat(
+                            0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "sync_spin",
+                        ).value
+                    } else 0f
                     IconButton(onClick = onSync) {
-                        Icon(Icons.Rounded.Sync, contentDescription = "Sincronizar")
+                        Icon(Icons.Rounded.Sync, contentDescription = "Sincronizar", modifier = Modifier.rotate(-spin))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -82,7 +138,7 @@ fun HomeTab(
             )
         },
     ) { padding ->
-        PullToRefreshBox(
+        SupacoPullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = onSync,
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -95,7 +151,18 @@ fun HomeTab(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp),
                 ) {
-                    item {
+                    if (faltasNovas.isNotEmpty()) {
+                        item(key = "faltas_novas") {
+                            FaltasNovasCard(
+                                materias = materias.filter { it.codigoDiario in faltasNovas },
+                                onOpen = onOpenDetail,
+                                onDismiss = onDismissFaltasNovas,
+                                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp).animateItem(),
+                            )
+                        }
+                    }
+
+                    item(key = "sync") {
                         SyncStatusLine(
                             lastSyncAt = lastSyncAt,
                             warning = syncWarning,
@@ -105,7 +172,7 @@ fun HomeTab(
 
                     // Hero card
                     heroMateria?.let { m ->
-                        item {
+                        item(key = "hero") {
                             HeroCard(
                                 materia = m,
                                 temAulaHoje = materiaHoje != null,
@@ -115,14 +182,15 @@ fun HomeTab(
                                     else -> "Aula de hoje"
                                 },
                                 onAskVerdict = { onAskVerdict(m.id) },
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(16.dp).enterOnce(index = 0),
                             )
                         }
                     }
 
                     // Semana horários
                     if (materias.isNotEmpty()) {
-                        item {
+                        item(key = "semana") {
+                            Column(Modifier.enterOnce(index = 2)) {
                             Text(
                                 "Minha semana",
                                 style = MaterialTheme.typography.titleMedium,
@@ -134,6 +202,7 @@ fun HomeTab(
                                 onOpen = onOpenDetail,
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
+                            }
                         }
                     }
                 }
@@ -194,6 +263,9 @@ private fun HeroCard(
                     size = 52.dp,
                     containerColor = solid.copy(alpha = 0.25f),
                     contentColor = solid,
+                    breathe = true,
+                    spin = true,
+                    mood = moodFor(status),
                 ) {
                     Icon(materia.icone, null, modifier = Modifier.size(26.dp))
                 }
@@ -210,7 +282,9 @@ private fun HeroCard(
                         color = onContainer,
                         maxLines = 2,
                     )
-                    if (materia.dia != "—") {
+                    if (temAulaHoje) {
+                        NextClassLine(materia, onContainer)
+                    } else if (materia.dia != "—") {
                         Text(
                             "${materia.diaAbbr} · ${materia.horaInicio}–${materia.horaFim}",
                             style = MaterialTheme.typography.bodySmall,
@@ -253,9 +327,12 @@ private fun HeroCard(
                     animationSpec = spring(dampingRatio = 0.4f, stiffness = 700f),
                     label = "verdict_btn_scale",
                 )
-                // Dado dá uma "rolada" periódica pra chamar atenção
+                // Dado dá uma "rolada" periódica pra chamar atenção — só nas primeiras
+                // aberturas do dia, depois some para não cansar
+                val cacheStore: CacheStore = koinInject()
+                val chamariz = remember { cacheStore.countToday("home_wiggle") < 3 } && !LocalReduceMotion.current
                 val diceTransition = rememberInfiniteTransition(label = "dice")
-                val wiggle by diceTransition.animateFloat(
+                val wiggleAnim by diceTransition.animateFloat(
                     initialValue = 0f,
                     targetValue = 0f,
                     animationSpec = infiniteRepeatable(
@@ -272,6 +349,7 @@ private fun HeroCard(
                     ),
                     label = "dice_wiggle",
                 )
+                val wiggle = if (chamariz) wiggleAnim else 0f
                 val pressSpin by animateFloatAsState(
                     targetValue = if (pressed) 180f else 0f,
                     animationSpec = spring(dampingRatio = 0.5f, stiffness = 300f),
@@ -307,22 +385,32 @@ private fun SyncStatusLine(lastSyncAt: Long?, warning: String?, modifier: Modifi
         lastSyncAt == null -> return
         else -> "Atualizado ${tempoRelativo(now - lastSyncAt)}"
     }
-    Row(
+    // Texto novo entra por baixo, o antigo sobe
+    AnimatedContent(
+        targetState = text to (warning != null),
+        transitionSpec = {
+            (slideInVertically(Motion.calma(250)) { it } + fadeIn(Motion.calma(250))) togetherWith
+                (slideOutVertically(Motion.calma(200)) { -it } + fadeOut(Motion.calma(150)))
+        },
         modifier = modifier,
+        label = "sync_status",
+    ) { (text, isWarning) ->
+    Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(
-            if (warning != null) Icons.Rounded.CloudOff else Icons.Rounded.CloudDone,
+            if (isWarning) Icons.Rounded.CloudOff else Icons.Rounded.CloudDone,
             contentDescription = null,
             modifier = Modifier.size(14.dp),
-            tint = if (warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
     }
 }
 
@@ -363,12 +451,23 @@ fun SemanaHorarios(
         .coerceAtLeast(0)
 
     var selectedDia by remember { mutableIntStateOf(hojeIdx) }
+    val haptics = rememberHaptics()
+    fun selectDia(i: Int) {
+        if (i != selectedDia && i in dias.indices) {
+            haptics.tick()
+            selectedDia = i
+        }
+    }
 
     Column(modifier = modifier) {
         // Day selector row
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val gap = 6.dp
+        val chipWidth = (maxWidth - gap * (dias.size - 1)) / dias.size
+        Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
             dias.forEachIndexed { i, abbr ->
                 val isSelected = i == selectedDia
@@ -376,7 +475,7 @@ fun SemanaHorarios(
 
                 FilterChip(
                     selected = isSelected,
-                    onClick = { selectedDia = i },
+                    onClick = { selectDia(i) },
                     label = {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(abbr, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
@@ -390,8 +489,48 @@ fun SemanaHorarios(
                 )
             }
         }
+        // Indicador que desliza até o dia escolhido
+        val indicatorX by animateDpAsState(
+            targetValue = (chipWidth + gap) * selectedDia + chipWidth / 2 - 10.dp,
+            animationSpec = Motion.viva<Dp>().orSnap(),
+            label = "day_indicator",
+        )
+        Box(
+            Modifier
+                .padding(top = 4.dp)
+                .offset(x = indicatorX)
+                .size(width = 20.dp, height = 3.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape),
+        )
+        }
+        }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+
+        // Aulas do dia: trocam deslizando na direção do dia escolhido; swipe troca o dia
+        var dragAccum by remember { mutableFloatStateOf(0f) }
+        AnimatedContent(
+            targetState = selectedDia,
+            transitionSpec = {
+                val dir = if (targetState > initialState) 1 else -1
+                (slideInHorizontally(Motion.calma(300)) { it / 3 * dir } + fadeIn(Motion.calma(250))) togetherWith
+                    (slideOutHorizontally(Motion.calma(250)) { -it / 3 * dir } + fadeOut(Motion.calma(150))) using
+                    SizeTransform(clip = false)
+            },
+            modifier = Modifier.pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragAccum = 0f },
+                    onHorizontalDrag = { _, delta -> dragAccum += delta },
+                    onDragEnd = {
+                        val threshold = 60.dp.toPx()
+                        if (dragAccum < -threshold) selectDia(selectedDia + 1)
+                        else if (dragAccum > threshold) selectDia(selectedDia - 1)
+                    },
+                )
+            },
+            label = "semana_dia",
+        ) { selectedDia ->
+        Column {
 
         val selectedDiaAbbr = dias.getOrElse(selectedDia) { "Seg" }
         val aulasDoDia = aulasPorDia[selectedDiaAbbr].orEmpty()
@@ -415,7 +554,7 @@ fun SemanaHorarios(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                aulasDoDia.forEach { (m, entry) ->
+                aulasDoDia.forEachIndexed { index, (m, entry) ->
                     val (container, _, solid) = when (m.status) {
                         AbsenceStatus.GO -> Triple(vc.goContainer, vc.onGoContainer, vc.goSolid)
                         AbsenceStatus.WARN -> Triple(vc.warnContainer, vc.onWarnContainer, vc.warnSolid)
@@ -423,9 +562,14 @@ fun SemanaHorarios(
                         AbsenceStatus.NO, AbsenceStatus.REPROVADO -> Triple(vc.noContainer, vc.onNoContainer, vc.noSolid)
                     }
 
+                    val interaction = remember { MutableInteractionSource() }
                     OutlinedCard(
                         onClick = { onOpen(m.id) },
-                        modifier = Modifier.fillMaxWidth(),
+                        interactionSource = interaction,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .enterOnce(index = index + 1)
+                            .pressScale(interaction),
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -472,19 +616,192 @@ fun SemanaHorarios(
             }
         }
 
+        }
+        }
+
         Spacer(Modifier.height(16.dp))
     }
 }
 
+/** Skeleton com a silhueta real da Home: o conteúdo entra no mesmo lugar, sem pulo. */
 @Composable
 private fun ShimmerHomeContent() {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        repeat(3) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(120.dp).padding(bottom = 12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = MaterialTheme.shapes.medium,
-            ) {}
+        Box(Modifier.size(140.dp, 12.dp).shimmerEffect(CircleShape))
+        Spacer(Modifier.height(16.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    SkeletonShape(OrgShape.COOKIE, 52.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(90.dp, 10.dp).shimmerEffect(CircleShape))
+                        Box(Modifier.size(170.dp, 14.dp).shimmerEffect(CircleShape))
+                        Box(Modifier.size(110.dp, 10.dp).shimmerEffect(CircleShape))
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(130.dp, 24.dp).shimmerEffect(CircleShape))
+                        Box(Modifier.size(100.dp, 10.dp).shimmerEffect(CircleShape))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.size(132.dp, 40.dp).shimmerEffect(CircleShape))
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Box(Modifier.size(110.dp, 16.dp).shimmerEffect(CircleShape))
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(5) { Box(Modifier.weight(1f).height(56.dp).shimmerEffect(MaterialTheme.shapes.small)) }
+        }
+        Spacer(Modifier.height(14.dp))
+        repeat(2) {
+            Box(Modifier.fillMaxWidth().height(62.dp).shimmerEffect(MaterialTheme.shapes.medium))
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/** Subtítulo da saudação: data (modo sério) ou uma frase do dia no tom do app. */
+@Composable
+private fun fraseDoDia(temAulaHoje: Boolean, serio: Boolean): String {
+    val dia = ScheduleData.currentDayName()
+    return remember(dia, temAulaHoje, serio) {
+        if (serio) {
+            java.text.SimpleDateFormat("EEEE, d 'de' MMMM", java.util.Locale("pt", "BR"))
+                .format(java.util.Date())
+                .replaceFirstChar { it.uppercase() }
+        } else when {
+            dia == "Sábado" -> "Sábado. Nem o SUAP trabalha."
+            dia == "Domingo" -> "Domingo. O dado está descansando."
+            !temAulaHoje -> "Hoje ninguém te cobra presença."
+            dia == "Sexta" -> "Sexta. O dado está de bom humor."
+            else -> listOf(
+                "Mais um dia, mais uma chamada.",
+                "Hoje tem chamada. Ou não?",
+                "Vamos ver o que o destino diz.",
+                "Presença é um estado de espírito.",
+            )[(System.currentTimeMillis() / 86_400_000L % 4).toInt()]
+        }
+    }
+}
+
+/**
+ * Situação da aula de hoje da matéria do hero: "Começa em 12 min" (dígitos rolando),
+ * "Em aula · termina em X min" com uma linha de progresso, ou "já acabou".
+ */
+@Composable
+private fun NextClassLine(materia: MateriaDisplay, color: Color) {
+    val hoje = ScheduleData.currentDayName()
+    val aulas = remember(materia) {
+        materia.horarios.filter { it.dia == hoje }.sortedBy { ScheduleData.parseMinutes(it.horaInicio) }
+    }
+    val now by produceState(ScheduleData.nowMinutes()) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            value = ScheduleData.nowMinutes()
+        }
+    }
+    val atual = aulas.firstOrNull { now >= ScheduleData.parseMinutes(it.horaInicio) && now < ScheduleData.parseMinutes(it.horaFim) }
+    val proxima = aulas.firstOrNull { ScheduleData.parseMinutes(it.horaInicio) > now }
+    val style = MaterialTheme.typography.bodySmall
+    val dim = color.copy(alpha = 0.75f)
+
+    when {
+        atual != null -> {
+            val ini = ScheduleData.parseMinutes(atual.horaInicio)
+            val fim = ScheduleData.parseMinutes(atual.horaFim)
+            val restam = fim - now
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+                    PulseRing(color, Modifier.size(14.dp))
+                    Box(Modifier.size(6.dp).background(color, CircleShape))
+                }
+                Spacer(Modifier.width(6.dp))
+                Text("Em aula · termina em ", style = style, color = dim)
+                OdometerText("$restam", style = style, color = dim, fontWeight = FontWeight.SemiBold, increasing = false)
+                Text(" min", style = style, color = dim)
+            }
+            val progress by animateFloatAsState(
+                targetValue = ((now - ini).toFloat() / (fim - ini).coerceAtLeast(1)).coerceIn(0f, 1f),
+                animationSpec = Motion.calma<Float>(800).orSnap(),
+                label = "class_progress",
+            )
+            Box(
+                Modifier
+                    .padding(top = 4.dp)
+                    .width(160.dp)
+                    .height(3.dp)
+                    .background(color.copy(alpha = 0.2f), CircleShape),
+            ) {
+                Box(Modifier.fillMaxWidth(progress).height(3.dp).background(color, CircleShape))
+            }
+        }
+        proxima != null -> {
+            val faltam = ScheduleData.parseMinutes(proxima.horaInicio) - now
+            if (faltam <= 120) {
+                Row {
+                    Text("Começa em ", style = style, color = dim)
+                    OdometerText("$faltam", style = style, color = dim, fontWeight = FontWeight.SemiBold, increasing = false)
+                    Text(" min · ${proxima.sala}", style = style, color = dim, maxLines = 1)
+                }
+            } else {
+                Text("Hoje · ${proxima.horaInicio}–${proxima.horaFim}", style = style, color = dim)
+            }
+        }
+        else -> Text("A aula de hoje já acabou", style = style, color = dim)
+    }
+}
+
+/** Aviso de faltas novas registradas no SUAP desde a última visita. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FaltasNovasCard(
+    materias: List<MateriaDisplay>,
+    onOpen: (String) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (materias.isEmpty()) return
+    val vc = MaterialTheme.verdictColors
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth().enterOnce(),
+        colors = CardDefaults.elevatedCardColors(containerColor = vc.warnContainer),
+    ) {
+        Row(Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                PulseRing(vc.warnSolid, Modifier.size(24.dp))
+                Icon(Icons.Rounded.NotificationImportant, null, tint = vc.warnSolid, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (materias.size == 1) "O SUAP registrou falta nova" else "O SUAP registrou faltas novas",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = vc.onWarnContainer,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Rounded.Close, contentDescription = "Dispensar aviso", tint = vc.onWarnContainer)
+            }
+        }
+        FlowRow(
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            materias.forEach { m ->
+                AssistChip(
+                    onClick = { onOpen(m.codigoDiario) },
+                    label = { Text(m.nome, maxLines = 1) },
+                    leadingIcon = { Icon(m.icone, null, modifier = Modifier.size(16.dp)) },
+                )
+            }
         }
     }
 }

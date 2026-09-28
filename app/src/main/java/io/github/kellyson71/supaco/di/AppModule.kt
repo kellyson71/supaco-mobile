@@ -122,5 +122,5 @@ val appModule = module {
     single { AcademicRepository(get(), get(), get(), get(), androidContext(), get()) }
 
     viewModel { AuthViewModel(get(), get()) }
-    viewModel { DashboardViewModel(get(), get(), get(), get()) }
+    viewModel { DashboardViewModel(get(), get(), get(), get(), get()) }
 }

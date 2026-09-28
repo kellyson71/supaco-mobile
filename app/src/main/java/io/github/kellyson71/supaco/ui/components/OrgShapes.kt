@@ -112,6 +112,23 @@ fun DrawScope.drawScallop(
     drawPath(path, color)
 }
 
+/** Mesma forma, pintada com um [Brush] (skeleton com brilho). */
+fun DrawScope.drawScallopBrush(geometry: ShapeGeometry, brush: androidx.compose.ui.graphics.Brush) {
+    val scale = size.width / 100f
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    val path = Path()
+    for (i in 0..180) {
+        val t = (i / 180f) * 2f * PI.toFloat()
+        val r = (geometry.base + geometry.amp * cos(geometry.bumps * t)) * scale
+        val x = cx + r * cos(t)
+        val y = cy + r * sin(t)
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    drawPath(path, brush)
+}
+
 fun DrawScope.drawScallopShape(shape: OrgShape, color: Color) = drawScallop(shape.geometry, color)
 
 /**
