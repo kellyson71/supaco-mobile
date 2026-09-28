@@ -203,7 +203,12 @@ fun MateriasTab(
             },
             modifier = Modifier.fillMaxSize().padding(padding),
             label = "periodo_lista",
-        ) { _ ->
+        ) { periodoDaTela ->
+        // Cada tela guarda a lista do próprio período: a que sai não mostra os dados novos
+        val listaAtual = filtered
+        var snapshot by remember { mutableStateOf(listaAtual) }
+        if (periodoDaTela == selectedPeriodo) snapshot = listaAtual
+        val filtered = snapshot
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
