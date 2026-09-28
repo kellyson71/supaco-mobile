@@ -7,12 +7,25 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ProfileResponse(
     val identificacao: String,
-    @SerialName("nome_usual") val nomeUsual: String,
+    @SerialName("nome_usual") val nomeUsual: String = "",
+    @SerialName("nome_social") val nomeSocial: String? = null,
     val nome: String = "",
     @SerialName("tipo_usuario") val tipoUsuario: String = "",
     val campus: String = "",
     val foto: String? = null,
     val email: String? = null,
+) {
+    /** Contas de servidor/prestador não têm boletim — o app é só para alunos. */
+    val isAluno: Boolean
+        get() = !tipoUsuario.contains("servidor", ignoreCase = true) &&
+            !tipoUsuario.contains("prestador", ignoreCase = true)
+}
+
+// Response from /api/ensino/meus-dados-aluno/
+@Serializable
+data class DadosAlunoResponse(
+    val curso: String = "",
+    val situacao: String = "",
 )
 
 // Internal app model — used by UI and Room
@@ -32,15 +45,16 @@ data class Vinculo(
     val campus: String,
 )
 
-fun ProfileResponse.toProfile() = Profile(
+fun ProfileResponse.toProfile(curso: String = "") = Profile(
     id = 1,
     matricula = identificacao,
-    nomeUsual = nomeUsual.ifBlank { nome },
+    nomeUsual = nomeUsual.ifBlank { nomeSocial?.takeIf { it.isNotBlank() } ?: nome },
     tipoVinculo = tipoUsuario,
     vinculo = Vinculo(
         matricula = identificacao,
-        nome = nome,
-        curso = campus,
+        // Nome social tem prioridade sobre o de registro
+        nome = nomeSocial?.takeIf { it.isNotBlank() } ?: nome,
+        curso = curso,
         campus = campus,
     ),
     fotoUrl = foto,

@@ -11,8 +11,8 @@ import io.github.kellyson71.supaco.data.local.entity.ProfileEntity
 
 @Database(
     entities = [ProfileEntity::class, BoletimEntity::class, HorarioEntity::class],
-    version = 4,
-    exportSchema = false
+    version = 5,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun profileDao(): ProfileDao

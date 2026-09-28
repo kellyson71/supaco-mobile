@@ -4,10 +4,10 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import io.github.kellyson71.supaco.data.local.entity.BoletimEntity
 import io.github.kellyson71.supaco.data.local.entity.HorarioEntity
 import io.github.kellyson71.supaco.data.local.entity.ProfileEntity
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProfileDao {
@@ -16,24 +16,24 @@ interface ProfileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: ProfileEntity)
-    
-    @Query("DELETE FROM profile")
-    suspend fun clear()
 }
 
 @Dao
 interface BoletimDao {
     @Query("SELECT * FROM boletim")
     suspend fun getBoletim(): List<BoletimEntity>
-    
-    @Query("SELECT * FROM boletim")
-    fun observeBoletim(): Flow<List<BoletimEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBoletim(items: List<BoletimEntity>)
-    
+
     @Query("DELETE FROM boletim")
     suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(items: List<BoletimEntity>) {
+        clear()
+        insertBoletim(items)
+    }
 }
 
 @Dao
@@ -46,4 +46,10 @@ interface HorarioDao {
 
     @Query("DELETE FROM horarios")
     suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(items: List<HorarioEntity>) {
+        clear()
+        insertAll(items)
+    }
 }

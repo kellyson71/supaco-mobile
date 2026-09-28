@@ -8,17 +8,11 @@ data class ScheduleEntry(
     val horaFim: String,    // "16:20"
     val sala: String,
     val professor: String?,
+    /** Quantidade de aulas de 45 min no bloco — faltar o bloco inteiro custa esse tanto de faltas. */
+    val aulas: Int = 1,
 )
 
 object ScheduleData {
-
-    // Fallback caso a API de turmas virtuais falhe no primeiro sync
-    val BY_SIGLA = mapOf(
-        "TEC.0017" to ScheduleEntry("Terça", "13:00", "16:20", "Bloco 10 · Sala 16", "Beatriz Soares"),
-        "TEC.0012" to ScheduleEntry("Quinta", "14:50", "16:20", "Bloco 10 · Sala 16", "Ciro Daniel"),
-        "TEC.0005" to ScheduleEntry("Quarta", "14:50", "16:20", "Bloco 10 · Sala 16", "Beatriz Soares"),
-        "TEC.0035" to ScheduleEntry("Quinta", "16:30", "18:00", "Bloco 10 · Sala 16", "Aluísio Igor"),
-    )
 
     // ── Parser do formato de horário do SUAP ("3V1234 / 5M12") ──
     // Dia: 2=Segunda … 7=Sábado. Turno: M/V/N. Dígitos: blocos de 45min.
@@ -46,6 +40,7 @@ object ScheduleData {
             val blocos = BLOCOS[match.groupValues[2][0]] ?: return@mapNotNull null
             val nums = match.groupValues[3].mapNotNull { it.digitToIntOrNull() }
                 .filter { it in 1..blocos.size }
+                .distinct()
                 .sorted()
             if (nums.isEmpty()) return@mapNotNull null
             ScheduleEntry(
@@ -54,6 +49,7 @@ object ScheduleData {
                 horaFim = blocos[nums.last() - 1].second,
                 sala = sala,
                 professor = professor,
+                aulas = nums.size,
             )
         }.toList()
     }
@@ -87,8 +83,6 @@ object ScheduleData {
         disciplina.replace(Regex("^[A-Z]+\\.\\d+\\s*-\\s*"), "")
             .replace(Regex("\\s*\\((Curso\\s*\\d+|NCT|.*?)\\)\\s*$"), "")
             .trim()
-
-    fun forDisciplina(disciplina: String): ScheduleEntry? = BY_SIGLA[extraiSigla(disciplina)]
 
     fun currentDayName(): String = when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
         Calendar.MONDAY -> "Segunda"

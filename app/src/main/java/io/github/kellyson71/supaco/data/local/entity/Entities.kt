@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import io.github.kellyson71.supaco.data.model.BoletimItem
 import io.github.kellyson71.supaco.data.model.NotaEtapa
+import io.github.kellyson71.supaco.data.model.PeriodoLetivo
 import io.github.kellyson71.supaco.data.model.Profile
 import io.github.kellyson71.supaco.data.model.Vinculo
 
@@ -55,11 +56,15 @@ data class VinculoEntity(
     val campus: String
 )
 
+/** Cache do boletim do período corrente — alimenta widgets e notificações. */
 @Entity(tableName = "boletim")
 data class BoletimEntity(
     @PrimaryKey val codigoDiario: String,
+    val anoLetivo: Int,
+    val periodoLetivo: Int,
     val disciplina: String,
     val cargaHoraria: Int,
+    val cargaHorariaCumprida: Int,
     val numeroFaltas: Int,
     val frequencia: Double,
     val situacao: String,
@@ -70,11 +75,13 @@ data class BoletimEntity(
     val notaEtapa2: Double?,
     val notaEtapa3: Double?,
     val notaEtapa4: Double?,
+    val notaAvaliacaoFinal: Double?,
 ) {
     fun toDomain() = BoletimItem(
         codigoDiario = codigoDiario,
         disciplina = disciplina,
         cargaHoraria = cargaHoraria,
+        cargaHorariaCumprida = cargaHorariaCumprida,
         numeroFaltas = numeroFaltas,
         frequencia = frequencia,
         situacao = situacao,
@@ -85,13 +92,17 @@ data class BoletimEntity(
         notaEtapa2 = notaEtapa2?.let { NotaEtapa(nota = it) },
         notaEtapa3 = notaEtapa3?.let { NotaEtapa(nota = it) },
         notaEtapa4 = notaEtapa4?.let { NotaEtapa(nota = it) },
+        notaAvaliacaoFinal = notaAvaliacaoFinal?.let { NotaEtapa(nota = it) },
     )
 
     companion object {
-        fun fromDomain(item: BoletimItem) = BoletimEntity(
+        fun fromDomain(item: BoletimItem, periodo: PeriodoLetivo) = BoletimEntity(
             codigoDiario = item.codigoDiario,
+            anoLetivo = periodo.anoLetivo,
+            periodoLetivo = periodo.periodoLetivo,
             disciplina = item.disciplina,
             cargaHoraria = item.cargaHoraria,
+            cargaHorariaCumprida = item.cargaHorariaCumprida,
             numeroFaltas = item.numeroFaltas,
             frequencia = item.frequencia,
             situacao = item.situacao,
@@ -102,6 +113,7 @@ data class BoletimEntity(
             notaEtapa2 = item.notaEtapa2?.nota,
             notaEtapa3 = item.notaEtapa3?.nota,
             notaEtapa4 = item.notaEtapa4?.nota,
+            notaAvaliacaoFinal = item.notaAvaliacaoFinal?.nota,
         )
     }
 }
@@ -114,4 +126,6 @@ data class HorarioEntity(
     val horaInicio: String, // "13:00"
     val horaFim: String,    // "16:20"
     val sala: String,
+    /** Quantidade de aulas (blocos de 45 min) — cada uma conta como uma falta. */
+    val aulas: Int,
 )

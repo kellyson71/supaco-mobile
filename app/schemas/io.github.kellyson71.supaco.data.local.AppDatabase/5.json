@@ -1,0 +1,254 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "118ef07906cb6a2d0431c8a9bb1c9cd5",
+    "entities": [
+      {
+        "tableName": "profile",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `matricula` TEXT NOT NULL, `nomeUsual` TEXT NOT NULL, `tipoVinculo` TEXT NOT NULL, `fotoUrl` TEXT, `vinculo_matricula` TEXT NOT NULL, `vinculo_nome` TEXT NOT NULL, `vinculo_curso` TEXT NOT NULL, `vinculo_campus` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matricula",
+            "columnName": "matricula",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nomeUsual",
+            "columnName": "nomeUsual",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipoVinculo",
+            "columnName": "tipoVinculo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fotoUrl",
+            "columnName": "fotoUrl",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "vinculo.matricula",
+            "columnName": "vinculo_matricula",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vinculo.nome",
+            "columnName": "vinculo_nome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vinculo.curso",
+            "columnName": "vinculo_curso",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vinculo.campus",
+            "columnName": "vinculo_campus",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "boletim",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`codigoDiario` TEXT NOT NULL, `anoLetivo` INTEGER NOT NULL, `periodoLetivo` INTEGER NOT NULL, `disciplina` TEXT NOT NULL, `cargaHoraria` INTEGER NOT NULL, `cargaHorariaCumprida` INTEGER NOT NULL, `numeroFaltas` INTEGER NOT NULL, `frequencia` REAL NOT NULL, `situacao` TEXT NOT NULL, `quantidadeAvaliacoes` INTEGER NOT NULL, `mediaDisciplina` REAL, `mediaFinal` REAL, `notaEtapa1` REAL, `notaEtapa2` REAL, `notaEtapa3` REAL, `notaEtapa4` REAL, `notaAvaliacaoFinal` REAL, PRIMARY KEY(`codigoDiario`))",
+        "fields": [
+          {
+            "fieldPath": "codigoDiario",
+            "columnName": "codigoDiario",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anoLetivo",
+            "columnName": "anoLetivo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodoLetivo",
+            "columnName": "periodoLetivo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disciplina",
+            "columnName": "disciplina",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cargaHoraria",
+            "columnName": "cargaHoraria",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cargaHorariaCumprida",
+            "columnName": "cargaHorariaCumprida",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "numeroFaltas",
+            "columnName": "numeroFaltas",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frequencia",
+            "columnName": "frequencia",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "situacao",
+            "columnName": "situacao",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantidadeAvaliacoes",
+            "columnName": "quantidadeAvaliacoes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaDisciplina",
+            "columnName": "mediaDisciplina",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "mediaFinal",
+            "columnName": "mediaFinal",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notaEtapa1",
+            "columnName": "notaEtapa1",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notaEtapa2",
+            "columnName": "notaEtapa2",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notaEtapa3",
+            "columnName": "notaEtapa3",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notaEtapa4",
+            "columnName": "notaEtapa4",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notaAvaliacaoFinal",
+            "columnName": "notaAvaliacaoFinal",
+            "affinity": "REAL",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "codigoDiario"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "horarios",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sigla` TEXT NOT NULL, `dia` TEXT NOT NULL, `horaInicio` TEXT NOT NULL, `horaFim` TEXT NOT NULL, `sala` TEXT NOT NULL, `aulas` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sigla",
+            "columnName": "sigla",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dia",
+            "columnName": "dia",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "horaInicio",
+            "columnName": "horaInicio",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "horaFim",
+            "columnName": "horaFim",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sala",
+            "columnName": "sala",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aulas",
+            "columnName": "aulas",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '118ef07906cb6a2d0431c8a9bb1c9cd5')"
+    ]
+  }
+}

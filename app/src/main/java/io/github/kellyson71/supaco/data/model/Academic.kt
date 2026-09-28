@@ -5,8 +5,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class PaginatedResponse<T>(
-    val results: List<T>,
+    val results: List<T> = emptyList(),
     val count: Int = 0,
+    val next: String? = null,
 )
 
 @Serializable
@@ -22,14 +23,14 @@ data class PeriodoLetivo(
 data class TurmaVirtual(
     val id: String,
     val sigla: String,
-    val descricao: String,
+    val descricao: String = "",
     @SerialName("locais_de_aula") val locaisDeAula: List<String> = emptyList(),
     @SerialName("horarios_de_aula") val horariosDeAula: String? = null,
 )
 
 @Serializable
 data class NotaEtapa(
-    val nota: Double? = null,
+    @Serializable(with = FlexibleDoubleSerializer::class) val nota: Double? = null,
     val faltas: Int = 0,
 )
 
@@ -37,28 +38,24 @@ data class NotaEtapa(
 data class BoletimItem(
     @SerialName("codigo_diario") val codigoDiario: String,
     val disciplina: String,
-    @SerialName("carga_horaria") val cargaHoraria: Int,
-    @SerialName("numero_faltas") val numeroFaltas: Int,
-    @SerialName("percentual_carga_horaria_frequentada") val frequencia: Double,
-    val situacao: String,
+    @SerialName("carga_horaria") val cargaHoraria: Int = 0,
+    @SerialName("carga_horaria_cumprida") val cargaHorariaCumprida: Int = 0,
+    @SerialName("numero_faltas") val numeroFaltas: Int = 0,
+    @SerialName("percentual_carga_horaria_frequentada") val frequencia: Double = 100.0,
+    val situacao: String = "",
     @SerialName("quantidade_avaliacoes") val quantidadeAvaliacoes: Int = 2,
+    @Serializable(with = FlexibleDoubleSerializer::class)
     @SerialName("media_disciplina") val mediaDisciplina: Double? = null,
+    @Serializable(with = FlexibleDoubleSerializer::class)
     @SerialName("media_final_disciplina") val mediaFinal: Double? = null,
     @SerialName("nota_etapa_1") val notaEtapa1: NotaEtapa? = null,
     @SerialName("nota_etapa_2") val notaEtapa2: NotaEtapa? = null,
     @SerialName("nota_etapa_3") val notaEtapa3: NotaEtapa? = null,
     @SerialName("nota_etapa_4") val notaEtapa4: NotaEtapa? = null,
+    @SerialName("nota_avaliacao_final") val notaAvaliacaoFinal: NotaEtapa? = null,
 ) {
-    // Média consolidada: media_disciplina ou media_final (a que vier primeiro)
-    val mediaDisplay: String get() = when {
-        mediaDisciplina != null -> mediaDisciplina.toString()
-        mediaFinal != null -> mediaFinal.toString()
-        else -> "--"
-    }
-
-    // Nota da etapa 1 como string exibível
-    val notaEtapa1Display: String get() = notaEtapa1?.nota?.toString() ?: "--"
-    val notaEtapa2Display: String get() = notaEtapa2?.nota?.toString() ?: "--"
+    // Média consolidada: media_final (já considera a NAF) tem prioridade sobre media_disciplina
+    val mediaDisplay: String get() = (mediaFinal ?: mediaDisciplina)?.toString() ?: "--"
 }
 
 @Serializable
@@ -73,4 +70,3 @@ data class Servidor(
     @SerialName("telefones_institucionais") val telefones: List<String> = emptyList(),
     @SerialName("curriculo_lattes") val curriculoLattes: String? = null,
 )
-
