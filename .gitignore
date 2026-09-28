@@ -19,3 +19,6 @@ kapt_*.txt
 *.keystore
 *.jks
 keystore.properties
+/tmp
+*.apk
+*.aab

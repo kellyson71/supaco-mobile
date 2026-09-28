@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
@@ -13,27 +15,39 @@ android {
         applicationId = "io.github.kellyson71.supaco"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.8"
+        versionCode = 9
+        versionName = "2.0"
     }
 
+    // Assinatura de release: keystore.properties na raiz (fora do git) ou
+    // variáveis de ambiente (CI). Sem nenhum dos dois, o APK de release sai
+    // sem assinatura — nunca há senha padrão no código.
+    val keystoreProps = Properties().apply {
+        rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+    }
+    fun signingValue(prop: String, env: String): String? =
+        keystoreProps.getProperty(prop) ?: System.getenv(env)
+
+    val releaseStoreFile = signingValue("storeFile", "SUPACO_KEYSTORE_PATH")?.let { rootProject.file(it) }
+    val hasReleaseSigning = releaseStoreFile?.exists() == true
+
     signingConfigs {
-        create("release") {
-            val keystoreFile = rootProject.file("release.keystore")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("SUPACO_STORE_PASSWORD") ?: "supaco123"
-                keyAlias = System.getenv("SUPACO_KEY_ALIAS") ?: "supaco"
-                keyPassword = System.getenv("SUPACO_KEY_PASSWORD") ?: "supaco123"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = signingValue("storePassword", "SUPACO_STORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "SUPACO_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "SUPACO_KEY_PASSWORD")
             }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -43,7 +57,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 
@@ -56,6 +70,11 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+// Schemas do Room versionados em app/schemas — base para migrações futuras.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -76,7 +95,7 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation("androidx.compose.material:material-icons-extended")
+  implementation(libs.androidx.compose.material.icons.extended)
 
   // Esquemas de cor dinâmicos a partir de uma cor-semente (temas + OLED monocromático)
   implementation(libs.material.kolor)
@@ -93,6 +112,7 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.okhttp.mockwebserver)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)
@@ -126,7 +146,7 @@ dependencies {
   implementation(libs.androidx.biometric)
 
   // WorkManager — alertas locais de faltas (sem Firebase)
-  implementation("androidx.work:work-runtime-ktx:2.10.0")
+  implementation(libs.androidx.work.runtime)
 
   // Splash Screen
   implementation(libs.androidx.core.splashscreen)
