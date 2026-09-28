@@ -22,3 +22,4 @@ keystore.properties
 /tmp
 *.apk
 *.aab
+*.sha256
