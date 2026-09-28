@@ -2,6 +2,7 @@ package io.github.kellyson71.supaco.ui.dashboard
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.github.kellyson71.supaco.data.ScheduleData
 import io.github.kellyson71.supaco.data.model.BoletimItem
@@ -41,19 +42,52 @@ data class MateriaDisplay(
     val restantes: Int,
     val status: AbsenceStatus,
     val ehHoje: Boolean,
-)
+    /** Aulas desta matéria hoje — faltar o dia custa esse tanto de faltas. */
+    val aulasHoje: Int,
+    /** Status considerando faltar todas as aulas de hoje (igual a [status] se não há aula hoje). */
+    val statusHoje: AbsenceStatus,
+) {
+    /** Status que responde "posso faltar hoje?" para esta matéria. */
+    val statusVeredito: AbsenceStatus get() = if (aulasHoje > 0) statusHoje else status
+    /** Faltas livres que sobram depois de faltar hoje. */
+    val restantesAposHoje: Int get() = restantes - aulasHoje
+}
 
-fun calcStatus(faltas: Int, cargaHoraria: Int): AbsenceStatus {
-    val limite = floor(cargaHoraria * 0.25).toInt()
-    val restantes = limite - faltas
+/** Máximo de faltas permitido: 25% da carga horária (frequência mínima de 75%). */
+fun limiteFaltas(cargaHoraria: Int): Int = floor(cargaHoraria * 0.25).toInt()
+
+/**
+ * Status de risco ao faltar [aulas] aulas tendo [restantes] faltas livres.
+ * Com aulas = 1 é o status "geral" da matéria.
+ */
+fun statusParaFaltar(restantes: Int, aulas: Int): AbsenceStatus {
+    val depois = restantes - aulas
     return when {
-        restantes <= -1 -> AbsenceStatus.REPROVADO
-        restantes == 0 -> AbsenceStatus.NO
-        restantes == 1 -> AbsenceStatus.LAST
-        restantes <= 3 -> AbsenceStatus.WARN
+        restantes < 0 -> AbsenceStatus.REPROVADO
+        depois < 0 -> AbsenceStatus.NO
+        depois == 0 -> AbsenceStatus.LAST
+        depois <= 2 -> AbsenceStatus.WARN
         else -> AbsenceStatus.GO
     }
 }
+
+fun calcStatus(faltas: Int, cargaHoraria: Int): AbsenceStatus =
+    statusParaFaltar(limiteFaltas(cargaHoraria) - faltas, aulas = 1)
+
+/** Quão grave é o status — maior é pior. */
+val AbsenceStatus.gravidade: Int get() = ordinal
+
+/**
+ * Resposta de "posso faltar hoje?": a matéria de hoje em pior situação depois de
+ * contar todas as aulas do dia. Null se não há aula hoje.
+ */
+fun vereditoDoDia(materias: List<MateriaDisplay>): MateriaDisplay? =
+    materias.filter { it.aulasHoje > 0 }
+        .maxWithOrNull(compareBy<MateriaDisplay> { it.statusHoje.gravidade }.thenByDescending { it.restantesAposHoje })
+
+/** Matéria com menos folga no semestre (independente do dia). */
+fun materiaMaisCritica(materias: List<MateriaDisplay>): MateriaDisplay? =
+    materias.minWithOrNull(compareBy<MateriaDisplay> { it.restantes }.thenBy { it.nome })
 
 private fun iconeParaDisciplina(nome: String): ImageVector {
     val n = nome.lowercase()
@@ -82,19 +116,20 @@ private val CORES_LIST = listOf(MateriaCor.PRIMARY, MateriaCor.TERTIARY, Materia
 fun buildMaterias(
     items: List<BoletimItem>,
     horariosBySigla: Map<String, List<io.github.kellyson71.supaco.data.ScheduleEntry>> = emptyMap(),
+    hoje: String = ScheduleData.currentDayName(),
 ): List<MateriaDisplay> {
-    val hoje = ScheduleData.currentDayName()
     val diaOrdem = ScheduleData.DIAS_SEMANA.withIndex().associate { (i, d) -> d to i }
     return items.mapIndexed { i, item ->
         val nome = ScheduleData.limpaNome(item.disciplina)
         val sigla = ScheduleData.extraiSigla(item.disciplina)
-        val horarios = (horariosBySigla[sigla] ?: listOfNotNull(ScheduleData.BY_SIGLA[sigla]))
+        val horarios = horariosBySigla[sigla].orEmpty()
             .sortedWith(compareBy({ diaOrdem[it.dia] ?: 9 }, { it.horaInicio }))
         val schedule = horarios.firstOrNull()
         val totalFaltas = item.numeroFaltas
-        val limite = floor(item.cargaHoraria * 0.25).toInt()
+        val limite = limiteFaltas(item.cargaHoraria)
         val restantes = limite - totalFaltas
         val status = calcStatus(totalFaltas, item.cargaHoraria)
+        val aulasHoje = horarios.filter { it.dia == hoje }.sumOf { it.aulas }
         // No card principal, prioriza a ocorrência de hoje se existir
         val principal = horarios.firstOrNull { it.dia == hoje } ?: schedule
         val dia = principal?.dia ?: "—"
@@ -127,6 +162,8 @@ fun buildMaterias(
             restantes = restantes,
             status = status,
             ehHoje = horarios.any { it.dia == hoje },
+            aulasHoje = aulasHoje,
+            statusHoje = if (aulasHoje > 0) statusParaFaltar(restantes, aulasHoje) else status,
         )
     }
 }
@@ -166,22 +203,53 @@ private val LINES_ACIDO = mapOf(
     ),
 )
 
-fun verdictMetaFor(status: AbsenceStatus, salt: Int = 0): VerdictMeta {
-    val lines = LINES_ACIDO[status] ?: emptyList()
-    val sub = lines.getOrElse(salt % lines.size) { "" }
+private val LINES_SERIO = mapOf(
+    AbsenceStatus.GO to listOf(
+        "Você tem uma boa margem de faltas nesta matéria.",
+        "Situação tranquila: ainda sobram várias faltas livres.",
+    ),
+    AbsenceStatus.WARN to listOf(
+        "Dá para faltar, mas a margem está ficando pequena.",
+        "Atenção: restam poucas faltas livres nesta matéria.",
+    ),
+    AbsenceStatus.LAST to listOf(
+        "Se faltar, você usa as últimas faltas permitidas.",
+        "Esta seria sua última falta sem reprovar.",
+    ),
+    AbsenceStatus.NO to listOf(
+        "Faltar agora ultrapassa o limite de 25% e reprova por falta.",
+        "Não há faltas livres suficientes. Procure ir à aula.",
+    ),
+    AbsenceStatus.REPROVADO to listOf(
+        "O limite de faltas desta matéria já foi ultrapassado.",
+        "Converse com a coordenação sobre sua situação nesta matéria.",
+    ),
+)
+
+/** Modo sério: textos neutros no lugar das mensagens irônicas (preferência do usuário). */
+val LocalModoSerio = staticCompositionLocalOf { false }
+
+fun verdictMetaFor(status: AbsenceStatus, salt: Int = 0, serio: Boolean = false): VerdictMeta {
+    val lines = (if (serio) LINES_SERIO else LINES_ACIDO)[status].orEmpty()
+    val sub = if (lines.isEmpty()) "" else lines[Math.floorMod(salt, lines.size)]
     return when (status) {
         AbsenceStatus.GO -> VerdictMeta("PODE FALTAR", sub, Icons.Rounded.SentimentVerySatisfied)
-        AbsenceStatus.WARN -> VerdictMeta("CALMA AÍ", sub, Icons.Rounded.SentimentNeutral)
-        AbsenceStatus.LAST -> VerdictMeta("ÚLTIMA BALA", sub, Icons.Rounded.SentimentDissatisfied)
-        AbsenceStatus.NO -> VerdictMeta("NEM PENSE", sub, Icons.Rounded.SentimentVeryDissatisfied)
-        AbsenceStatus.REPROVADO -> VerdictMeta("JÁ ERA", sub, Icons.Rounded.SkullIcon)
+        AbsenceStatus.WARN -> VerdictMeta(if (serio) "COM CAUTELA" else "CALMA AÍ", sub, Icons.Rounded.SentimentNeutral)
+        AbsenceStatus.LAST -> VerdictMeta(if (serio) "ÚLTIMA FALTA" else "ÚLTIMA BALA", sub, Icons.Rounded.SentimentDissatisfied)
+        AbsenceStatus.NO -> VerdictMeta(if (serio) "NÃO FALTE" else "NEM PENSE", sub, Icons.Rounded.SentimentVeryDissatisfied)
+        AbsenceStatus.REPROVADO -> VerdictMeta(if (serio) "LIMITE EXCEDIDO" else "JÁ ERA", sub, Icons.Rounded.SkullIcon)
     }
 }
 
 // Skull icon fallback (not in standard set)
 val Icons.Rounded.SkullIcon: ImageVector get() = Icons.Rounded.SentimentVeryDissatisfied
 
-fun rankDe(totalFaltas: Int): String = when {
+fun rankDe(totalFaltas: Int, serio: Boolean = false): String = if (serio) when {
+    totalFaltas > 45 -> "Muitas faltas"
+    totalFaltas > 25 -> "Faltas acima da média"
+    totalFaltas > 12 -> "Algumas faltas"
+    else -> "Poucas faltas"
+} else when {
     totalFaltas > 45 -> "Lenda da Vagabundagem"
     totalFaltas > 25 -> "Vagabundo Sênior"
     totalFaltas > 12 -> "Faltante Casual"

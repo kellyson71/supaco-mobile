@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.components
 
 import androidx.compose.animation.AnimatedVisibility
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -50,16 +51,17 @@ fun VerdictOverlay(
     onClose: () -> Unit,
 ) {
     val vc = MaterialTheme.verdictColors
-    val (container, onContainer, solid) = when (materia.status) {
+    val status = materia.statusVeredito
+    val (container, onContainer, solid) = when (status) {
         AbsenceStatus.GO -> Triple(vc.goContainer, vc.onGoContainer, vc.goSolid)
         AbsenceStatus.WARN -> Triple(vc.warnContainer, vc.onWarnContainer, vc.warnSolid)
         AbsenceStatus.LAST -> Triple(vc.lastContainer, vc.onLastContainer, vc.lastSolid)
         AbsenceStatus.NO, AbsenceStatus.REPROVADO -> Triple(vc.noContainer, vc.onNoContainer, vc.noSolid)
     }
 
-    val meta = verdictMetaFor(materia.status, materia.codigoDiario.hashCode())
+    val meta = verdictMetaFor(materia.statusVeredito, materia.codigoDiario.hashCode(), LocalModoSerio.current)
     val haptics = LocalHapticFeedback.current
-    val ehRuim = materia.status == AbsenceStatus.NO || materia.status == AbsenceStatus.REPROVADO
+    val ehRuim = status == AbsenceStatus.NO || status == AbsenceStatus.REPROVADO
 
     var phase by remember { mutableStateOf(Phase.ROLLING) }
 
@@ -118,7 +120,7 @@ fun VerdictOverlay(
             when (phase) {
                 Phase.ROLLING -> RollingDice()
                 Phase.REVEAL -> {
-                    if (materia.status == AbsenceStatus.GO) {
+                    if (status == AbsenceStatus.GO) {
                         ConfettiLayer(baseColor = solid)
                     }
                     RevealContent(
@@ -281,17 +283,39 @@ private fun RevealContent(
             }
         }
 
+        if (materia.aulasHoje > 0) {
+            Spacer(Modifier.height(12.dp))
+            StaggeredIn(delayMs = 480) {
+                val n = materia.aulasHoje
+                Text(
+                    "Hoje ${if (n == 1) "é 1 aula" else "são $n aulas"}: faltar custa $n falta${if (n == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onContainer,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
 
         StaggeredIn(delayMs = 550) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatChip("${materia.faltas}", "usadas", container, onContainer, solid)
                 StatChip("${materia.limite}", "limite", container, onContainer, solid)
-                StatChip(
-                    if (materia.restantes <= 0) "0" else "${materia.restantes}",
-                    "sobrando",
-                    container, onContainer, solid,
-                )
+                if (materia.aulasHoje > 0) {
+                    StatChip(
+                        "${materia.restantesAposHoje.coerceAtLeast(0)}",
+                        "sobram se faltar",
+                        container, onContainer, solid,
+                    )
+                } else {
+                    StatChip(
+                        "${materia.restantes.coerceAtLeast(0)}",
+                        "sobrando",
+                        container, onContainer, solid,
+                    )
+                }
             }
         }
 

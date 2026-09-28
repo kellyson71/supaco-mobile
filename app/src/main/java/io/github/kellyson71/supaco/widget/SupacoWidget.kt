@@ -35,9 +35,9 @@ import io.github.kellyson71.supaco.data.local.AppDatabase
 import io.github.kellyson71.supaco.data.local.entity.BoletimEntity
 import io.github.kellyson71.supaco.ui.dashboard.AbsenceStatus
 import io.github.kellyson71.supaco.ui.dashboard.calcStatus
+import io.github.kellyson71.supaco.ui.dashboard.limiteFaltas
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import kotlin.math.floor
 
 // Paleta fixa do widget (light/dark) — Glance não tem acesso ao tema Compose
 internal fun statusSolid(status: AbsenceStatus) = when (status) {
@@ -70,7 +70,7 @@ internal data class WidgetMateria(
 )
 
 internal fun BoletimEntity.toWidgetMateria(): WidgetMateria {
-    val limite = floor(cargaHoraria * 0.25).toInt()
+    val limite = limiteFaltas(cargaHoraria)
     return WidgetMateria(
         nome = disciplina.substringAfter(" - ").ifBlank { disciplina }.trim(),
         faltas = numeroFaltas,

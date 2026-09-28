@@ -27,6 +27,8 @@ fun ServidorSearchSheet(
     error: String?,
     onSearch: (String) -> Unit,
     onClose: () -> Unit,
+    hasMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
 
@@ -87,9 +89,9 @@ fun ServidorSearchSheet(
                     .heightIn(min = 200.dp, max = 500.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (isSearching) {
+                if (isSearching && servers.isEmpty()) {
                     CircularProgressIndicator()
-                } else if (error != null) {
+                } else if (error != null && servers.isEmpty()) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp)
@@ -190,6 +192,17 @@ fun ServidorSearchSheet(
                                                 )
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                        if (hasMore) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    if (isSearching) {
+                                        CircularProgressIndicator(Modifier.size(24.dp))
+                                    } else {
+                                        androidx.compose.material3.TextButton(onClick = onLoadMore) { Text("Carregar mais") }
                                     }
                                 }
                             }

@@ -1,5 +1,16 @@
 package io.github.kellyson71.supaco.ui.dashboard
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import io.github.kellyson71.supaco.data.local.SettingsManager
+import io.github.kellyson71.supaco.notifications.FaltasNotifier
+import io.github.kellyson71.supaco.notifications.FaltasWorker
+import org.koin.compose.koinInject
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
@@ -35,7 +46,6 @@ private enum class Tab(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    onLogout: () -> Unit,
     onOpenSettings: () -> Unit = {},
     initialDest: String? = null,
     viewModel: DashboardViewModel = koinViewModel(),
@@ -54,6 +64,52 @@ fun DashboardScreen(
     var showAchievements by remember { mutableStateOf(false) }
     var showSearchServidores by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val settings: SettingsManager = koinInject()
+
+    // Android 13+: explica e pede a permissão de notificação uma única vez,
+    // depois que o aluno já viu os próprios dados.
+    var showNotifPrompt by remember { mutableStateOf(false) }
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        settings.setNotificationsEnabled(granted)
+        if (granted) FaltasWorker.schedule(context) else FaltasWorker.cancel(context)
+    }
+    LaunchedEffect(uiState.materias.isNotEmpty()) {
+        if (uiState.materias.isNotEmpty() &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !settings.notificationPermissionAsked &&
+            settings.notificationsEnabled.value &&
+            !FaltasNotifier.hasPermission(context)
+        ) {
+            showNotifPrompt = true
+        }
+    }
+    if (showNotifPrompt) {
+        AlertDialog(
+            onDismissRequest = {},
+            icon = { Icon(Icons.Rounded.NotificationsActive, contentDescription = null) },
+            title = { Text("Avisos de faltas") },
+            text = {
+                Text("O Supaco pode checar seu boletim algumas vezes por dia e avisar quando uma matéria estiver perto do limite de faltas. Nada sai do seu celular além da consulta ao SUAP.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    settings.notificationPermissionAsked = true
+                    showNotifPrompt = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }) { Text("Ativar avisos") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    settings.notificationPermissionAsked = true
+                    settings.setNotificationsEnabled(false)
+                    FaltasWorker.cancel(context)
+                    showNotifPrompt = false
+                }) { Text("Agora não") }
+            },
+        )
+    }
 
 
     // Shortcut "posso faltar hoje?" — open verdict as soon as data arrives
@@ -61,8 +117,8 @@ fun DashboardScreen(
     LaunchedEffect(uiState.materias, initialDest) {
         if (initialDest == "verdict" && !verdictShortcutHandled && uiState.materias.isNotEmpty()) {
             verdictShortcutHandled = true
-            val hoje = uiState.materias.firstOrNull { it.ehHoje } ?: uiState.materias.first()
-            viewModel.openVerdict(hoje.codigoDiario)
+            val alvo = vereditoDoDia(uiState.materias) ?: materiaMaisCritica(uiState.materias)
+            alvo?.let { viewModel.openVerdict(it.codigoDiario) }
         }
     }
 
@@ -132,21 +188,27 @@ fun DashboardScreen(
                                 HomeTab(
                                     nomeUsual = uiState.profile?.nomeUsual ?: "aluno",
                                     materias = uiState.materias,
-                                    isLoading = uiState.isLoading,
-                                    onSync = { viewModel.sync(forceRefresh = false) },
+                                    isLoading = uiState.isLoading || uiState.isSyncing,
+                                    lastSyncAt = uiState.lastSyncAt,
+                                    syncWarning = uiState.syncWarning,
+                                    onSync = { viewModel.sync() },
                                     onOpenDetail = { viewModel.openDetail(it) },
                                     onAskVerdict = { viewModel.openVerdict(it) },
                                 )
                             }
                         }
-                        Tab.MATERIAS -> MateriasTab(
+                        Tab.MATERIAS -> if (uiState.error != null && uiState.materias.isEmpty() && uiState.periodos.isEmpty()) {
+                            ErrorScreen(message = uiState.error!!, onRetry = { viewModel.fetchData() })
+                        } else MateriasTab(
                             materias = uiState.materias,
                             periodos = uiState.periodos,
                             selectedPeriodo = uiState.selectedPeriodo,
                             onSelectPeriodo = { viewModel.selectPeriodo(it) },
                             onOpenDetail = { viewModel.openDetail(it) },
                         )
-                        Tab.HORARIOS -> HorariosTab(
+                        Tab.HORARIOS -> if (uiState.error != null && uiState.materias.isEmpty()) {
+                            ErrorScreen(message = uiState.error!!, onRetry = { viewModel.fetchData() })
+                        } else HorariosTab(
                             materias = uiState.materias,
                             onOpenDetail = { viewModel.openDetail(it) },
                         )
@@ -169,10 +231,7 @@ fun DashboardScreen(
                             },
                             onOpenSettings = onOpenSettings,
                             onViewAchievements = { showAchievements = true },
-                            onLogout = {
-                                viewModel.logout()
-                                onLogout()
-                            },
+                            onLogout = { viewModel.logout() },
                         )
 
                     }
@@ -183,14 +242,9 @@ fun DashboardScreen(
             val context = androidx.compose.ui.platform.LocalContext.current
             if (currentTab != Tab.PERFIL) {
                 SpeedDialFab(
-                    onSync = { viewModel.sync(forceRefresh = false) },
+                    onSync = { viewModel.sync() },
                     syncing = uiState.isSyncing,
                     actions = listOf(
-                        SpeedDialAction(
-                            icon = Icons.Rounded.RestartAlt,
-                            label = "Sincronização forçada (rede)",
-                            onClick = { viewModel.sync(forceRefresh = true) },
-                        ),
                         SpeedDialAction(
                             icon = Icons.Rounded.EmojiEvents,
                             label = "Ver Conquistas",
@@ -279,7 +333,9 @@ fun DashboardScreen(
             isSearching = uiState.isSearchingServers,
             error = uiState.searchServersError,
             onSearch = { viewModel.searchServidores(it) },
-            onClose = { showSearchServidores = false }
+            onClose = { showSearchServidores = false },
+            hasMore = uiState.hasMoreServers,
+            onLoadMore = { viewModel.loadMoreServidores() },
         )
     }
 }

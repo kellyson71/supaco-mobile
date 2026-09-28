@@ -2,13 +2,16 @@ package io.github.kellyson71.supaco.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.kellyson71.supaco.data.ScheduleEntry
 import io.github.kellyson71.supaco.data.local.FaltasHistory
+import io.github.kellyson71.supaco.data.model.BoletimItem
 import io.github.kellyson71.supaco.data.model.PeriodoLetivo
 import io.github.kellyson71.supaco.data.model.Profile
+import io.github.kellyson71.supaco.data.model.Servidor
+import io.github.kellyson71.supaco.data.remote.userMessage
 import io.github.kellyson71.supaco.data.repository.AcademicRepository
 import io.github.kellyson71.supaco.data.repository.AuthRepository
 import io.github.kellyson71.supaco.data.repository.ProfileRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,22 +20,29 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class DashboardUiState(
+    /** Carregando sem nada para mostrar ainda. */
     val isLoading: Boolean = true,
     val profile: Profile? = null,
     val materias: List<MateriaDisplay> = emptyList(),
     val periodos: List<PeriodoLetivo> = emptyList(),
     val selectedPeriodo: PeriodoLetivo? = null,
     val streakDays: Int = 0,
+    /** Erro sem dados para mostrar — ocupa a tela. */
     val error: String? = null,
+    /** Falha ao atualizar, mas há dados salvos na tela. */
+    val syncWarning: String? = null,
+    val lastSyncAt: Long? = null,
     val isSyncing: Boolean = false,
     val detailMateriaId: String? = null,
     val verdictMateriaId: String? = null,
     val snackMessage: String? = null,
-    val servers: List<io.github.kellyson71.supaco.data.model.Servidor> = emptyList(),
+    val servers: List<Servidor> = emptyList(),
     val isSearchingServers: Boolean = false,
     val searchServersError: String? = null,
-)
-
+    val hasMoreServers: Boolean = false,
+) {
+    val isCurrentPeriodo: Boolean get() = selectedPeriodo != null && selectedPeriodo == periodos.firstOrNull()
+}
 
 class DashboardViewModel(
     private val profileRepository: ProfileRepository,
@@ -44,83 +54,108 @@ class DashboardViewModel(
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    private var horarios: Map<String, List<ScheduleEntry>> = emptyMap()
+    private var loadJob: Job? = null
+    private var snackJob: Job? = null
+    private var serversQuery: String = ""
+    private var serversPage: Int = 1
+    private var serversCampus: String? = null
 
     init {
-        fetchData()
+        loadJob = viewModelScope.launch { load() }
     }
 
-    fun fetchData(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            val profileResult = profileRepository.getProfile()
-            if (profileResult.isSuccess) {
-                _uiState.update { it.copy(profile = profileResult.getOrNull()) }
-                fetchAcademicData(forceRefresh)
-            } else {
-                _uiState.update {
-                    it.copy(isLoading = false, error = "Erro ao buscar perfil: ${profileResult.exceptionOrNull()?.message}")
-                }
-            }
-        }
+    /** Tentar de novo a partir da tela de erro. */
+    fun fetchData() {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch { load() }
     }
 
-    private suspend fun fetchAcademicData(forceRefresh: Boolean = false) {
-        val periodosResult = academicRepository.getPeriodosLetivos()
-        if (periodosResult.isFailure) {
-            _uiState.update { it.copy(isLoading = false, error = "Erro ao buscar períodos letivos") }
-            return
-        }
-        val periodos = periodosResult.getOrNull().orEmpty()
-        val atual = _uiState.value.selectedPeriodo ?: periodos.firstOrNull()
-        _uiState.update { it.copy(periodos = periodos, selectedPeriodo = atual) }
-        if (atual == null) {
-            _uiState.update { it.copy(isLoading = false) }
-            return
-        }
-        loadBoletim(atual, isCurrent = atual == periodos.firstOrNull(), forceRefresh = forceRefresh)
-    }
+    /**
+     * Cache primeiro (resposta instantânea, funciona offline), rede depois.
+     * Retorna o erro da atualização pela rede, ou null se deu tudo certo.
+     */
+    private suspend fun load(): Throwable? {
+        _uiState.update { it.copy(error = null, isLoading = it.materias.isEmpty()) }
 
-    private suspend fun loadBoletim(periodo: PeriodoLetivo, isCurrent: Boolean, forceRefresh: Boolean = false) {
-        val useCache = isCurrent && !forceRefresh
-        val boletimResult = academicRepository.getBoletim(periodo.anoLetivo, periodo.periodoLetivo, useCache = useCache)
-        if (boletimResult.isSuccess) {
-            val items = boletimResult.getOrNull() ?: emptyList()
-            horarios = academicRepository.getHorarios()
-            if (isCurrent) {
-                faltasHistory.registerSync(items.sumOf { it.numeroFaltas })
-            }
+        profileRepository.cached()?.let { p -> _uiState.update { it.copy(profile = p) } }
+
+        val periodos = academicRepository.getPeriodosLetivos().getOrElse { e ->
+            _uiState.update { it.copy(isLoading = false, error = e.userMessage()) }
+            return e
+        }
+        val atual = periodos.firstOrNull()
+        val selecionado = _uiState.value.selectedPeriodo?.takeIf { it in periodos } ?: atual
+        _uiState.update { it.copy(periodos = periodos, selectedPeriodo = selecionado) }
+        if (selecionado == null) {
+            _uiState.update { it.copy(isLoading = false, error = "Nenhum período letivo encontrado no SUAP.") }
+            return null
+        }
+        val isCurrent = selecionado == atual
+
+        if (isCurrent && _uiState.value.materias.isEmpty()) {
+            academicRepository.cachedBoletim(selecionado)?.let { showBoletim(it, isCurrent = true) }
+        }
+
+        val result = academicRepository.fetchBoletim(selecionado, isCurrent)
+        // O usuário pode ter trocado de período enquanto a rede respondia
+        if (_uiState.value.selectedPeriodo != selecionado) return null
+
+        result.onSuccess { items ->
+            if (isCurrent) faltasHistory.registerSync(items.sumOf { it.numeroFaltas })
+            showBoletim(items, isCurrent)
+            _uiState.update { it.copy(syncWarning = null) }
+        }.onFailure { e ->
             _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    materias = buildMaterias(items, horarios),
-                    streakDays = faltasHistory.streakDays(),
-                )
+                if (it.materias.isNotEmpty()) it.copy(isLoading = false, syncWarning = "Sem atualizar: ${e.userMessage().lowercase().removeSuffix(".")}")
+                else it.copy(isLoading = false, error = e.userMessage())
             }
-        } else {
-            _uiState.update { it.copy(isLoading = false, error = "Erro ao buscar boletim") }
+        }
+
+        // Perfil atualizado em paralelo ao fluxo principal; falha aqui não atrapalha nada
+        viewModelScope.launch {
+            runCatching { profileRepository.refresh() }
+            profileRepository.cached()?.let { p -> _uiState.update { it.copy(profile = p) } }
+        }
+        return result.exceptionOrNull()
+    }
+
+    private suspend fun showBoletim(items: List<BoletimItem>, isCurrent: Boolean) {
+        // A grade salva é a do período corrente; semestres antigos ficam sem horário
+        val horarios = if (isCurrent) academicRepository.getHorarios() else emptyMap()
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                error = null,
+                materias = buildMaterias(items, horarios),
+                streakDays = faltasHistory.streakDays(),
+                lastSyncAt = if (isCurrent) academicRepository.lastSyncAt else null,
+            )
         }
     }
 
     fun selectPeriodo(periodo: PeriodoLetivo) {
-        val state = _uiState.value
-        if (periodo == state.selectedPeriodo) return
-        _uiState.update { it.copy(selectedPeriodo = periodo, isLoading = true, error = null) }
-        viewModelScope.launch {
-            loadBoletim(periodo, isCurrent = periodo == state.periodos.firstOrNull())
+        if (periodo == _uiState.value.selectedPeriodo) return
+        loadJob?.cancel()
+        _uiState.update { it.copy(selectedPeriodo = periodo, materias = emptyList(), isLoading = true, error = null, syncWarning = null) }
+        loadJob = viewModelScope.launch { load() }
+    }
+
+    fun sync() {
+        if (_uiState.value.isSyncing) return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true) }
+            val error = load()
+            _uiState.update { it.copy(isSyncing = false) }
+            showSnack(error?.userMessage() ?: "Boletim sincronizado com o SUAP.")
         }
     }
 
-    fun sync(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSyncing = true) }
-            fetchData(forceRefresh = forceRefresh)
-            delay(800)
-            _uiState.update { it.copy(
-                isSyncing = false, 
-                snackMessage = if (forceRefresh) "Sincronização forçada realizada." else "Boletim sincronizado com o SUAP."
-            ) }
-            delay(2600)
+    private fun showSnack(message: String) {
+        snackJob?.cancel()
+        snackJob = viewModelScope.launch {
+            _uiState.update { it.copy(snackMessage = message) }
+            delay(3000)
             _uiState.update { it.copy(snackMessage = null) }
         }
     }
@@ -130,35 +165,46 @@ class DashboardViewModel(
     fun openVerdict(id: String) = _uiState.update { it.copy(verdictMateriaId = id) }
     fun closeVerdict() = _uiState.update { it.copy(verdictMateriaId = null) }
 
+    /** A navegação para o login acontece na MainActivity, ao observar a sessão. */
     fun logout() {
         viewModelScope.launch { authRepository.logout() }
     }
 
     fun searchServidores(query: String) {
-        if (query.isBlank()) {
-            _uiState.update { it.copy(servers = emptyList(), searchServersError = null, isSearchingServers = false) }
+        serversQuery = query.trim()
+        serversPage = 1
+        if (serversQuery.isBlank()) {
+            _uiState.update { it.copy(servers = emptyList(), searchServersError = null, isSearchingServers = false, hasMoreServers = false) }
             return
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isSearchingServers = true, searchServersError = null) }
-            val campus = _uiState.value.profile?.vinculo?.campus
-            val result = academicRepository.buscarServidores(nome = query, campus = campus)
-            if (result.isSuccess) {
-                _uiState.update { it.copy(servers = result.getOrNull().orEmpty(), isSearchingServers = false) }
-            } else {
-                val fallbackResult = academicRepository.buscarServidores(nome = query, campus = null)
-                if (fallbackResult.isSuccess) {
-                    _uiState.update { it.copy(servers = fallbackResult.getOrNull().orEmpty(), isSearchingServers = false) }
-                } else {
-                    _uiState.update { 
-                        it.copy(
-                            isSearchingServers = false, 
-                            searchServersError = fallbackResult.exceptionOrNull()?.message ?: "Erro desconhecido"
-                        ) 
-                    }
-                }
+            // Primeiro no campus do aluno; sem resultado, na instituição toda
+            serversCampus = _uiState.value.profile?.vinculo?.campus?.takeIf { it.isNotBlank() }
+            var result = academicRepository.buscarServidores(serversQuery, serversCampus)
+            if (result.getOrNull()?.results.isNullOrEmpty() && serversCampus != null) {
+                serversCampus = null
+                result = academicRepository.buscarServidores(serversQuery, null)
+            }
+            result.onSuccess { page ->
+                _uiState.update { it.copy(servers = page.results, isSearchingServers = false, hasMoreServers = page.next != null) }
+            }.onFailure { e ->
+                _uiState.update { it.copy(isSearchingServers = false, searchServersError = e.userMessage(), hasMoreServers = false) }
             }
         }
     }
-}
 
+    fun loadMoreServidores() {
+        val state = _uiState.value
+        if (state.isSearchingServers || !state.hasMoreServers) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearchingServers = true) }
+            academicRepository.buscarServidores(serversQuery, serversCampus, serversPage + 1)
+                .onSuccess { page ->
+                    serversPage++
+                    _uiState.update { it.copy(servers = it.servers + page.results, isSearchingServers = false, hasMoreServers = page.next != null) }
+                }
+                .onFailure { e -> _uiState.update { it.copy(isSearchingServers = false, searchServersError = e.userMessage()) } }
+        }
+    }
+}

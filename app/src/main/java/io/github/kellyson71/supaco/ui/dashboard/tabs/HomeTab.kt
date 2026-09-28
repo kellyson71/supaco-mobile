@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
 import androidx.compose.animation.core.animateFloat
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -31,6 +32,11 @@ import io.github.kellyson71.supaco.ui.dashboard.AbsenceStatus
 import io.github.kellyson71.supaco.ui.dashboard.MateriaDisplay
 import io.github.kellyson71.supaco.ui.dashboard.MateriaCor
 import io.github.kellyson71.supaco.ui.dashboard.verdictMetaFor
+import io.github.kellyson71.supaco.ui.dashboard.vereditoDoDia
+import io.github.kellyson71.supaco.ui.dashboard.materiaMaisCritica
+import androidx.compose.runtime.produceState
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudDone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +44,8 @@ fun HomeTab(
     nomeUsual: String,
     materias: List<MateriaDisplay>,
     isLoading: Boolean,
+    lastSyncAt: Long?,
+    syncWarning: String?,
     onSync: () -> Unit,
     onOpenDetail: (String) -> Unit,
     onAskVerdict: (String) -> Unit,
@@ -46,7 +54,11 @@ fun HomeTab(
     val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 10 } }
     val vc = MaterialTheme.verdictColors
 
-    val hojeMateria = materias.firstOrNull { it.ehHoje } ?: materias.firstOrNull()
+    // "Posso faltar hoje?" olha a pior matéria do dia contando todas as aulas;
+    // sem aula hoje, destaca a matéria com menos folga no semestre.
+    val materiaHoje = vereditoDoDia(materias)
+    val heroMateria = materiaHoje ?: materiaMaisCritica(materias)
+    val aulasHojeCount = materias.count { it.aulasHoje > 0 }
 
     Scaffold(
         topBar = {
@@ -83,11 +95,25 @@ fun HomeTab(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp),
                 ) {
+                    item {
+                        SyncStatusLine(
+                            lastSyncAt = lastSyncAt,
+                            warning = syncWarning,
+                            modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp),
+                        )
+                    }
+
                     // Hero card
-                    hojeMateria?.let { m ->
+                    heroMateria?.let { m ->
                         item {
                             HeroCard(
                                 materia = m,
+                                temAulaHoje = materiaHoje != null,
+                                label = when {
+                                    materiaHoje == null -> "Sem aula hoje · sua matéria mais crítica"
+                                    aulasHojeCount > 1 -> "Hoje · a matéria mais arriscada"
+                                    else -> "Aula de hoje"
+                                },
                                 onAskVerdict = { onAskVerdict(m.id) },
                                 modifier = Modifier.padding(16.dp),
                             )
@@ -121,11 +147,13 @@ private val MateriaDisplay.id get() = codigoDiario
 @Composable
 private fun HeroCard(
     materia: MateriaDisplay,
+    temAulaHoje: Boolean,
+    label: String,
     onAskVerdict: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val vc = MaterialTheme.verdictColors
-    val status = materia.status
+    val status = if (temAulaHoje) materia.statusHoje else materia.status
     val container = when (status) {
         AbsenceStatus.GO -> vc.goContainer
         AbsenceStatus.WARN -> vc.warnContainer
@@ -171,7 +199,7 @@ private fun HeroCard(
                 }
                 Column {
                     Text(
-                        if (materia.ehHoje) "Próxima aula" else "Sua matéria mais crítica",
+                        label,
                         style = MaterialTheme.typography.labelMedium,
                         color = onContainer.copy(alpha = 0.7f),
                     )
@@ -194,7 +222,7 @@ private fun HeroCard(
 
             Spacer(Modifier.height(16.dp))
 
-            val meta = verdictMetaFor(materia.status)
+            val meta = verdictMetaFor(status, serio = LocalModoSerio.current)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -207,8 +235,12 @@ private fun HeroCard(
                         fontWeight = FontWeight.Black,
                         color = onContainer,
                     )
-                    val badge = if (materia.restantes <= 0) "sem folga"
-                                else "${materia.restantes} falta${if (materia.restantes == 1) "" else "s"} livre${if (materia.restantes == 1) "" else "s"}"
+                    val badge = if (temAulaHoje) {
+                        val n = materia.aulasHoje
+                        val sobra = materia.restantesAposHoje
+                        "faltar hoje custa $n · " + if (sobra < 0) "passa do limite" else "sobram $sobra"
+                    } else if (materia.restantes <= 0) "sem folga"
+                    else "${materia.restantes} falta${if (materia.restantes == 1) "" else "s"} livre${if (materia.restantes == 1) "" else "s"}"
                     Text(badge, style = MaterialTheme.typography.bodySmall, color = onContainer.copy(alpha = 0.7f))
                 }
 
@@ -258,6 +290,49 @@ private fun HeroCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SyncStatusLine(lastSyncAt: Long?, warning: String?, modifier: Modifier = Modifier) {
+    // Recalcula o "há X min" a cada minuto
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            value = System.currentTimeMillis()
+        }
+    }
+    val text = when {
+        warning != null -> warning
+        lastSyncAt == null -> return
+        else -> "Atualizado ${tempoRelativo(now - lastSyncAt)}"
+    }
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            if (warning != null) Icons.Rounded.CloudOff else Icons.Rounded.CloudDone,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = if (warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+internal fun tempoRelativo(ms: Long): String {
+    val min = ms / 60_000
+    return when {
+        min < 1 -> "agora mesmo"
+        min < 60 -> "há $min min"
+        min < 60 * 24 -> "há ${min / 60} h"
+        else -> "há ${min / (60 * 24)} dia${if (min / (60 * 24) == 1L) "" else "s"}"
     }
 }
 
@@ -389,7 +464,7 @@ fun SemanaHorarios(
                                 Text(entry.sala, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
 
-                            val meta = verdictMetaFor(m.status)
+                            val meta = verdictMetaFor(m.status, serio = LocalModoSerio.current)
                             Icon(meta.icon, null, modifier = Modifier.size(22.dp), tint = solid)
                         }
                     }

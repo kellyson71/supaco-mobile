@@ -25,6 +25,8 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import io.github.kellyson71.supaco.MainActivity
 import io.github.kellyson71.supaco.data.local.AppDatabase
+import io.github.kellyson71.supaco.data.ScheduleData
+import io.github.kellyson71.supaco.ui.dashboard.statusParaFaltar
 import io.github.kellyson71.supaco.ui.dashboard.AbsenceStatus
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -48,20 +50,36 @@ class SupacoVerdictWidget : GlanceAppWidget(), KoinComponent {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val pior = database.boletimDao().getBoletim()
-            .map { it.toWidgetMateria() }
-            .minByOrNull { it.restantes }
+        // Mesma regra do app: com aula hoje, a pior matéria do dia contando todas as
+        // aulas; sem aula hoje, a matéria com menos folga.
+        val hoje = ScheduleData.currentDayName()
+        val aulasHojePorSigla = database.horarioDao().getAll()
+            .filter { it.dia == hoje }
+            .groupBy { it.sigla }
+            .mapValues { (_, list) -> list.sumOf { it.aulas } }
+        val materias = database.boletimDao().getBoletim().map { entity ->
+            entity.toWidgetMateria() to (aulasHojePorSigla[ScheduleData.extraiSigla(entity.disciplina)] ?: 0)
+        }
+        val deHoje = materias.filter { it.second > 0 }.map { (m, aulas) ->
+            m.copy(status = statusParaFaltar(m.restantes, aulas), restantes = m.restantes - aulas)
+        }
+        val temAulaHoje = deHoje.isNotEmpty()
+        val escolhida = if (temAulaHoje) {
+            deHoje.maxWithOrNull(compareBy<WidgetMateria> { it.status.ordinal }.thenByDescending { it.restantes })
+        } else {
+            materias.map { it.first }.minByOrNull { it.restantes }
+        }
 
         provideContent {
             GlanceTheme {
-                VerdictContent(pior)
+                VerdictContent(escolhida, temAulaHoje)
             }
         }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun VerdictContent(materia: WidgetMateria?) {
+private fun VerdictContent(materia: WidgetMateria?, temAulaHoje: Boolean) {
     if (materia == null) {
         Column(
             modifier = GlanceModifier
@@ -98,7 +116,7 @@ private fun VerdictContent(materia: WidgetMateria?) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Posso faltar?",
+            if (temAulaHoje) "Posso faltar hoje?" else "Sem aula hoje",
             style = TextStyle(
                 color = ColorProvider(day = lightSolid, night = darkSolid),
                 fontSize = 11.sp,
@@ -115,7 +133,7 @@ private fun VerdictContent(materia: WidgetMateria?) {
         )
         Text(
             if (materia.restantes <= 0) materia.nome
-            else "${materia.restantes} livre${if (materia.restantes == 1) "" else "s"} · ${materia.nome}",
+            else "${materia.restantes} livre${if (materia.restantes == 1) "" else "s"}${if (temAulaHoje) " depois" else ""} · ${materia.nome}",
             maxLines = 1,
             style = TextStyle(
                 color = ColorProvider(day = lightOn, night = darkOn),

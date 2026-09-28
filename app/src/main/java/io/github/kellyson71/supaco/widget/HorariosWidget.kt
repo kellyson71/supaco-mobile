@@ -102,31 +102,17 @@ class HorariosWidget : GlanceAppWidget(), KoinComponent {
         val porSigla = boletim.associateBy { ScheduleData.extraiSigla(it.disciplina) }
         val horariosReais = database.horarioDao().getAll()
 
-        // Grade real do SUAP; fallback hardcoded se o sync ainda não trouxe horários
-        val aulas = if (horariosReais.isNotEmpty()) {
-            horariosReais.mapNotNull { h ->
-                val entity = porSigla[h.sigla] ?: return@mapNotNull null
-                AulaInfo(
-                    nome = ScheduleData.limpaNome(entity.disciplina),
-                    dia = h.dia,
-                    horaInicio = h.horaInicio,
-                    horaFim = h.horaFim,
-                    sala = h.sala,
-                    status = calcStatus(entity.numeroFaltas, entity.cargaHoraria),
-                )
-            }
-        } else {
-            boletim.mapNotNull { entity ->
-                val sched = ScheduleData.forDisciplina(entity.disciplina) ?: return@mapNotNull null
-                AulaInfo(
-                    nome = ScheduleData.limpaNome(entity.disciplina),
-                    dia = sched.dia,
-                    horaInicio = sched.horaInicio,
-                    horaFim = sched.horaFim,
-                    sala = sched.sala,
-                    status = calcStatus(entity.numeroFaltas, entity.cargaHoraria),
-                )
-            }
+        // Grade real do SUAP (sem grade, o widget mostra o estado vazio)
+        val aulas = horariosReais.mapNotNull { h ->
+            val entity = porSigla[h.sigla] ?: return@mapNotNull null
+            AulaInfo(
+                nome = ScheduleData.limpaNome(entity.disciplina),
+                dia = h.dia,
+                horaInicio = h.horaInicio,
+                horaFim = h.horaFim,
+                sala = h.sala,
+                status = calcStatus(entity.numeroFaltas, entity.cargaHoraria),
+            )
         }
 
         provideContent {
