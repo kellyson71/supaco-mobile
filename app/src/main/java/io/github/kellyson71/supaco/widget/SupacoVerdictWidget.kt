@@ -1,12 +1,14 @@
 package io.github.kellyson71.supaco.widget
 
 import android.content.Context
+import android.content.Intent
+import androidx.glance.action.Action
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.action.actionStartActivity
+import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -43,6 +45,33 @@ private fun verdictWord(status: AbsenceStatus) = when (status) {
     AbsenceStatus.REPROVADO -> "JÁ ERA"
 }
 
+internal data class VereditoHoje(val materia: WidgetMateria?, val temAulaHoje: Boolean)
+
+/**
+ * Mesma regra do app: com aula hoje, a pior matéria do dia contando todas as aulas;
+ * sem aula hoje, a matéria com menos folga. Usado pelo widget e pelo tile.
+ */
+internal suspend fun carregarVereditoHoje(database: AppDatabase): VereditoHoje {
+    val hoje = ScheduleData.currentDayName()
+    val aulasHojePorSigla = database.horarioDao().getAll()
+        .filter { it.dia == hoje }
+        .groupBy { it.sigla }
+        .mapValues { (_, list) -> list.sumOf { it.aulas } }
+    val materias = database.boletimDao().getBoletim().map { entity ->
+        entity.toWidgetMateria() to (aulasHojePorSigla[ScheduleData.extraiSigla(entity.disciplina)] ?: 0)
+    }
+    val deHoje = materias.filter { it.second > 0 }.map { (m, aulas) ->
+        m.copy(status = statusParaFaltar(m.restantes, aulas), restantes = m.restantes - aulas)
+    }
+    return if (deHoje.isNotEmpty()) {
+        VereditoHoje(deHoje.maxWithOrNull(compareBy<WidgetMateria> { it.status.ordinal }.thenByDescending { it.restantes }), true)
+    } else {
+        VereditoHoje(materias.map { it.first }.minByOrNull { it.restantes }, false)
+    }
+}
+
+internal fun verdictWordFor(status: AbsenceStatus) = verdictWord(status)
+
 class SupacoVerdictWidget : GlanceAppWidget(), KoinComponent {
 
     private val database: AppDatabase by inject()
@@ -50,36 +79,22 @@ class SupacoVerdictWidget : GlanceAppWidget(), KoinComponent {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // Mesma regra do app: com aula hoje, a pior matéria do dia contando todas as
-        // aulas; sem aula hoje, a matéria com menos folga.
-        val hoje = ScheduleData.currentDayName()
-        val aulasHojePorSigla = database.horarioDao().getAll()
-            .filter { it.dia == hoje }
-            .groupBy { it.sigla }
-            .mapValues { (_, list) -> list.sumOf { it.aulas } }
-        val materias = database.boletimDao().getBoletim().map { entity ->
-            entity.toWidgetMateria() to (aulasHojePorSigla[ScheduleData.extraiSigla(entity.disciplina)] ?: 0)
-        }
-        val deHoje = materias.filter { it.second > 0 }.map { (m, aulas) ->
-            m.copy(status = statusParaFaltar(m.restantes, aulas), restantes = m.restantes - aulas)
-        }
-        val temAulaHoje = deHoje.isNotEmpty()
-        val escolhida = if (temAulaHoje) {
-            deHoje.maxWithOrNull(compareBy<WidgetMateria> { it.status.ordinal }.thenByDescending { it.restantes })
-        } else {
-            materias.map { it.first }.minByOrNull { it.restantes }
-        }
+        val (escolhida, temAulaHoje) = carregarVereditoHoje(database)
+        // Tocar no widget abre direto no veredito, não só no app
+        val abrirVeredito = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(MainActivity.EXTRA_DEST, "verdict")
 
         provideContent {
             GlanceTheme {
-                VerdictContent(escolhida, temAulaHoje)
+                VerdictContent(escolhida, temAulaHoje, actionStartActivity(abrirVeredito))
             }
         }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun VerdictContent(materia: WidgetMateria?, temAulaHoje: Boolean) {
+private fun VerdictContent(materia: WidgetMateria?, temAulaHoje: Boolean, onClick: Action) {
     if (materia == null) {
         Column(
             modifier = GlanceModifier
@@ -88,7 +103,7 @@ private fun VerdictContent(materia: WidgetMateria?, temAulaHoje: Boolean) {
                 .background(GlanceTheme.colors.widgetBackground)
                 .cornerRadius(24.dp)
                 .padding(12.dp)
-                .clickable(actionStartActivity<MainActivity>()),
+                .clickable(onClick),
             verticalAlignment = Alignment.CenterVertically,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -111,7 +126,7 @@ private fun VerdictContent(materia: WidgetMateria?, temAulaHoje: Boolean) {
             .background(ColorProvider(day = lightContainer, night = darkContainer))
             .cornerRadius(24.dp)
             .padding(12.dp)
-            .clickable(actionStartActivity<MainActivity>()),
+            .clickable(onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

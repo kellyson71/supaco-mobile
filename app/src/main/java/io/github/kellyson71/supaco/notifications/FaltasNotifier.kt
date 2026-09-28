@@ -84,12 +84,24 @@ object FaltasNotifier {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
 
+            // "Ver matéria" abre o detalhe já com o anel animando
+            val detailIntent = PendingIntent.getActivity(
+                context,
+                key.hashCode() + 1,
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(MainActivity.EXTRA_DEST, "materia:$key"),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_shortcut_dice)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(contentIntent)
+                .addAction(0, "Ver matéria", detailIntent)
+                .setColor(corDoStatus(status))
                 .setAutoCancel(true)
                 .build()
 
@@ -100,6 +112,14 @@ object FaltasNotifier {
                 // Permissão revogada entre a checagem e o notify
             }
         }
+    }
+
+    /** Cor do semáforo no ícone da notificação. */
+    private fun corDoStatus(status: AbsenceStatus): Int = when (status) {
+        AbsenceStatus.GO -> 0xFF1E7A47.toInt()
+        AbsenceStatus.WARN -> 0xFF8A6A00.toInt()
+        AbsenceStatus.LAST -> 0xFFA24A12.toInt()
+        AbsenceStatus.NO, AbsenceStatus.REPROVADO -> 0xFFBA1A1A.toInt()
     }
 
     private fun mensagem(status: AbsenceStatus, nome: String, restantes: Int, serio: Boolean): Pair<String, String> =

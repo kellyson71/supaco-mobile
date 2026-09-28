@@ -1,5 +1,11 @@
 package io.github.kellyson71.supaco.ui.settings
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import android.widget.Toast
@@ -356,8 +362,8 @@ fun SettingsScreen(
                 )
             }
 
-            // ── Mensagens ──
-            SectionHeader("Mensagens")
+            // ── Mensagens e movimento ──
+            SectionHeader("Mensagens e movimento")
             SettingsCard {
                 val modoSerio by settings.modoSerio.collectAsStateWithLifecycle()
                 SettingRow(
@@ -371,12 +377,45 @@ fun SettingsScreen(
                         Switch(
                             checked = modoSerio,
                             onCheckedChange = { settings.setModoSerio(it) },
-                            thumbContent = if (modoSerio) {
+                            // Carinha rindo ↔ neutra trocando com giro
+                            thumbContent = {
+                                AnimatedContent(
+                                    targetState = modoSerio,
+                                    transitionSpec = {
+                                        (fadeIn() + scaleIn(initialScale = 0.4f)) togetherWith (fadeOut() + scaleOut(targetScale = 0.4f))
+                                    },
+                                    label = "serio_thumb",
+                                ) { serio ->
+                                    Icon(
+                                        if (serio) Icons.Rounded.SentimentNeutral else Icons.Rounded.SentimentVerySatisfied,
+                                        null,
+                                        modifier = Modifier.size(SwitchDefaults.IconSize),
+                                    )
+                                }
+                            },
+                        )
+                    },
+                    onClick = { settings.setModoSerio(!modoSerio) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                val reduceMotion by settings.reduceMotion.collectAsStateWithLifecycle()
+                SettingRow(
+                    icon = Icons.Rounded.Animation,
+                    shape = OrgShape.COOKIE,
+                    iconBg = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    title = "Reduzir animações",
+                    subtitle = "Sem tremor, confete, suspense nem formas se mexendo. Também segue a opção do sistema.",
+                    trailing = {
+                        Switch(
+                            checked = reduceMotion,
+                            onCheckedChange = { settings.setReduceMotion(it) },
+                            thumbContent = if (reduceMotion) {
                                 { Icon(Icons.Rounded.Check, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
                             } else null,
                         )
                     },
-                    onClick = { settings.setModoSerio(!modoSerio) },
+                    onClick = { settings.setReduceMotion(!reduceMotion) },
                 )
             }
 
