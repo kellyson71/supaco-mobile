@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.components
 
 import androidx.compose.foundation.layout.*
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,7 +38,7 @@ fun MateriaDetailSheet(
     val vc = MaterialTheme.verdictColors
     val (container, onContainer, solid) = statusColors(materia.status, vc)
 
-    val meta = verdictMetaFor(materia.status)
+    val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
     val freqValue = (materia.frequencia / 100.0).toFloat().coerceIn(0f, 1f)
 
     ModalBottomSheet(onDismissRequest = onClose) {
@@ -193,8 +194,10 @@ private fun SimuladorFaltas(materia: MateriaDisplay) {
     val statusFuturo = calcStatus(faltasFuturas, materia.total)
     val restantesFuturos = materia.limite - faltasFuturas
     val (fContainer, fOnContainer, fSolid) = statusColors(statusFuturo, vc)
-    val metaFuturo = verdictMetaFor(statusFuturo)
-    val freqFutura = ((materia.total - faltasFuturas).toDouble() / materia.total.toDouble() * 100.0).coerceIn(0.0, 100.0)
+    val metaFuturo = verdictMetaFor(statusFuturo, serio = LocalModoSerio.current)
+    val freqFutura = if (materia.total > 0) {
+        ((materia.total - faltasFuturas).toDouble() / materia.total.toDouble() * 100.0).coerceIn(0.0, 100.0)
+    } else 100.0
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,

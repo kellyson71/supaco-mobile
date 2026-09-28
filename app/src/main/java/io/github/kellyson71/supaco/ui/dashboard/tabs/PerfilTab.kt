@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
 import androidx.compose.foundation.layout.*
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -41,7 +42,7 @@ fun PerfilTab(
     val folga = materias.sumOf { maxOf(0, it.restantes) }
     val naCorda = materias.count { it.status in listOf(AbsenceStatus.NO, AbsenceStatus.LAST, AbsenceStatus.REPROVADO) }
     val piorMateria = materias.minByOrNull { it.restantes }
-    val rank = rankDe(totalFaltas)
+    val rank = rankDe(totalFaltas, LocalModoSerio.current)
 
     // Lógicas de conquistas para o resumo
     val cdfSupremo = materias.isNotEmpty() && materias.all { it.frequencia >= 100.0 }

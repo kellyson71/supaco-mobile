@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
 import androidx.compose.foundation.Canvas
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
@@ -224,7 +225,7 @@ private fun TimelineRow(
         AbsenceStatus.LAST -> Triple(vc.lastContainer, vc.onLastContainer, vc.lastSolid)
         AbsenceStatus.NO, AbsenceStatus.REPROVADO -> Triple(vc.noContainer, vc.onNoContainer, vc.noSolid)
     }
-    val meta = verdictMetaFor(materia.status)
+    val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
     val lineColor = MaterialTheme.colorScheme.outlineVariant
 
     Row(

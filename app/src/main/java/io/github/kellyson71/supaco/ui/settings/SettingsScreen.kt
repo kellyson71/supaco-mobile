@@ -1,5 +1,8 @@
 package io.github.kellyson71.supaco.ui.settings
 
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import android.widget.Toast
 import android.Manifest
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -67,9 +70,16 @@ fun SettingsScreen(
     val bgOpacity by settings.backgroundOpacity.collectAsStateWithLifecycle()
     val biometricChoice by settings.biometricChoice.collectAsStateWithLifecycle()
 
+    val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) settings.saveBackgroundFromUri(uri) }
+    ) { uri ->
+        if (uri != null) scope.launch {
+            if (!settings.saveBackgroundFromUri(uri)) {
+                Toast.makeText(context, "Não foi possível usar essa imagem.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val biometricAvailable = remember {
         BiometricManager.from(context).canAuthenticate(
@@ -166,64 +176,6 @@ fun SettingsScreen(
                     )
                 }
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    
-                    var showLangDialog by remember { mutableStateOf(false) }
-                    val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
-                    val currentLang = localeManager.applicationLocales.toLanguageTags().ifEmpty { "pt-BR" }
-                    
-                    SettingRow(
-                        icon = Icons.Rounded.Language,
-                        shape = OrgShape.PEBBLE,
-                        iconBg = MaterialTheme.colorScheme.primaryContainer,
-                        iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        title = "Idioma do aplicativo",
-                        subtitle = if (currentLang.startsWith("en")) "English (United States)" else "Português (Brasil)",
-                        onClick = { showLangDialog = true }
-                    )
-                    
-                    if (showLangDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showLangDialog = false },
-                            icon = { Icon(Icons.Rounded.Language, null) },
-                            title = { Text("Escolha o idioma") },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth().clickable {
-                                            localeManager.applicationLocales = android.os.LocaleList.forLanguageTags("pt-BR")
-                                            showLangDialog = false
-                                        }.padding(vertical = 8.dp)
-                                    ) {
-                                        RadioButton(selected = !currentLang.startsWith("en"), onClick = {
-                                            localeManager.applicationLocales = android.os.LocaleList.forLanguageTags("pt-BR")
-                                            showLangDialog = false
-                                        })
-                                        Text("Português (Brasil)", modifier = Modifier.padding(start = 8.dp))
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth().clickable {
-                                            localeManager.applicationLocales = android.os.LocaleList.forLanguageTags("en-US")
-                                            showLangDialog = false
-                                        }.padding(vertical = 8.dp)
-                                    ) {
-                                        RadioButton(selected = currentLang.startsWith("en"), onClick = {
-                                            localeManager.applicationLocales = android.os.LocaleList.forLanguageTags("en-US")
-                                            showLangDialog = false
-                                        })
-                                        Text("English (United States)", modifier = Modifier.padding(start = 8.dp))
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { showLangDialog = false }) { Text("Fechar") }
-                            }
-                        )
-                    }
-                }
             }
 
             // ── Cores ──
@@ -404,6 +356,30 @@ fun SettingsScreen(
                 )
             }
 
+            // ── Mensagens ──
+            SectionHeader("Mensagens")
+            SettingsCard {
+                val modoSerio by settings.modoSerio.collectAsStateWithLifecycle()
+                SettingRow(
+                    icon = Icons.Rounded.SentimentNeutral,
+                    shape = OrgShape.PEBBLE,
+                    iconBg = MaterialTheme.colorScheme.secondaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    title = "Modo sério",
+                    subtitle = "Troca as piadas por mensagens diretas e neutras",
+                    trailing = {
+                        Switch(
+                            checked = modoSerio,
+                            onCheckedChange = { settings.setModoSerio(it) },
+                            thumbContent = if (modoSerio) {
+                                { Icon(Icons.Rounded.Check, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
+                            } else null,
+                        )
+                    },
+                    onClick = { settings.setModoSerio(!modoSerio) },
+                )
+            }
+
             // ── Notificações ──
             SectionHeader("Notificações")
             SettingsCard {
@@ -526,13 +502,47 @@ fun SettingsScreen(
                     },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                SettingRow(
+                    icon = Icons.Rounded.Code,
+                    shape = OrgShape.COOKIE,
+                    iconBg = MaterialTheme.colorScheme.secondaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    title = "Código-fonte",
+                    subtitle = "Aberto no GitHub (licença MIT)",
+                    trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    onClick = { context.openUrl(REPO_URL) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                SettingRow(
+                    icon = Icons.Rounded.PrivacyTip,
+                    shape = OrgShape.PEBBLE,
+                    iconBg = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    title = "Política de privacidade",
+                    subtitle = "O que o app acessa e o que fica no seu celular",
+                    trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    onClick = { context.openUrl("$REPO_URL/blob/main/docs/PRIVACIDADE.md") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                SettingRow(
+                    icon = Icons.Rounded.BugReport,
+                    shape = OrgShape.FLOWER,
+                    iconBg = MaterialTheme.colorScheme.errorContainer,
+                    iconTint = MaterialTheme.colorScheme.onErrorContainer,
+                    title = "Reportar problema",
+                    subtitle = "Abre uma issue no GitHub",
+                    trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    onClick = { context.openUrl("$REPO_URL/issues/new/choose") },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 SettingRow(
                     icon = Icons.Rounded.Info,
                     shape = OrgShape.PEBBLE,
                     iconBg = MaterialTheme.colorScheme.surfaceVariant,
                     iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    title = "Supaco Mobile",
-                    subtitle = "Versão ${remember { appVersion(context) }} · feito pra quem vive no limite",
+                    title = "Supaco ${remember { appVersion(context) }}",
+                    subtitle = "App não-oficial, sem vínculo com o IFRN",
                 )
             }
 
@@ -557,6 +567,12 @@ fun SettingsScreen(
             },
         )
     }
+}
+
+private const val REPO_URL = "https://github.com/kellyson71/supaco-mobile"
+
+private fun android.content.Context.openUrl(url: String) {
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 }
 
 private enum class ThemeOption(val label: String, val icon: ImageVector, val mode: ThemeMode) {

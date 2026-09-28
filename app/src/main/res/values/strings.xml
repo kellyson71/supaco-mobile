@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Supaco Mobile</string>
+    <string name="app_name">Supaco</string>
 
     <string name="shortcut_verdict_short">Posso faltar?</string>
     <string name="shortcut_verdict_long">Posso faltar hoje?</string>

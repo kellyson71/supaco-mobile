@@ -1,6 +1,7 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
 import androidx.compose.foundation.layout.*
+import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -205,7 +206,7 @@ fun MateriaCard(
         MateriaCor.SECONDARY -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
         MateriaCor.TERTIARY -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
     }
-    val meta = verdictMetaFor(materia.status)
+    val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
 
     Card(
         onClick = onClick,

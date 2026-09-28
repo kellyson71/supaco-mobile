@@ -1,7 +1,11 @@
 package io.github.kellyson71.supaco.data.local
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +68,20 @@ class SettingsManager(private val context: Context) {
     )
     val notifyLevel: StateFlow<NotifyLevel> = _notifyLevel.asStateFlow()
 
+    /** Textos neutros no lugar das mensagens irônicas. */
+    private val _modoSerio = MutableStateFlow(prefs.getBoolean(KEY_MODO_SERIO, false))
+    val modoSerio: StateFlow<Boolean> = _modoSerio.asStateFlow()
+
+    /** Já explicamos e pedimos a permissão de notificação (Android 13+). */
+    var notificationPermissionAsked: Boolean
+        get() = prefs.getBoolean(KEY_NOTIF_ASKED, false)
+        set(value) = prefs.edit { putBoolean(KEY_NOTIF_ASKED, value) }
+
+    fun setModoSerio(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_MODO_SERIO, enabled) }
+        _modoSerio.value = enabled
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit { putInt(KEY_THEME, mode.ordinal) }
         _themeMode.value = mode
@@ -108,19 +126,38 @@ class SettingsManager(private val context: Context) {
 
     fun hasBackgroundFile(): Boolean = backgroundFile.exists()
 
-    /** Copia a imagem escolhida para o armazenamento interno e ativa o fundo. */
-    fun saveBackgroundFromUri(uri: Uri): Boolean = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            backgroundFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: return false
-        prefs.edit {
-            putBoolean(KEY_BG_ENABLED, true)
-            putInt(KEY_BG_VERSION, _backgroundVersion.value + 1)
-        }
-        _backgroundVersion.value += 1
-        _backgroundEnabled.value = true
-        true
-    }.getOrDefault(false)
+    /**
+     * Reduz a imagem escolhida (lado maior ≤ [BG_MAX_SIDE]) e grava como JPEG no
+     * armazenamento interno. Evita decodificar fotos de 12+ MP a cada abertura (OOM).
+     */
+    suspend fun saveBackgroundFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val resolver = context.contentResolver
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return@runCatching false
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= BG_MAX_SIDE) sample *= 2
+            val decoded = resolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            } ?: return@runCatching false
+            val scale = BG_MAX_SIDE.toFloat() / maxOf(decoded.width, decoded.height)
+            val bitmap = if (scale < 1f) {
+                Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt(), (decoded.height * scale).toInt(), true)
+            } else decoded
+            backgroundFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+            prefs.edit {
+                putBoolean(KEY_BG_ENABLED, true)
+                putInt(KEY_BG_VERSION, _backgroundVersion.value + 1)
+            }
+            _backgroundVersion.value += 1
+            _backgroundEnabled.value = true
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Decodifica o fundo salvo (já reduzido). Chamar fora da main thread. */
+    fun loadBackgroundBitmap(): Bitmap? =
+        if (hasBackgroundFile()) runCatching { BitmapFactory.decodeFile(backgroundFile.absolutePath) }.getOrNull() else null
 
     fun setBackgroundEnabled(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_BG_ENABLED, enabled) }
@@ -171,9 +208,12 @@ class SettingsManager(private val context: Context) {
         const val KEY_BIOMETRIC = "biometric_choice"
         const val KEY_NOTIFICATIONS = "notifications_enabled"
         const val KEY_NOTIFY_LEVEL = "notify_level"
+        const val KEY_MODO_SERIO = "modo_serio"
+        const val KEY_NOTIF_ASKED = "notif_permission_asked"
 
         const val DEFAULT_PALETTE = "violeta"
         const val DEFAULT_SEED = 0xFF6750A4.toInt()
         const val BG_FILENAME = "custom_background.jpg"
+        const val BG_MAX_SIDE = 1600
     }
 }
