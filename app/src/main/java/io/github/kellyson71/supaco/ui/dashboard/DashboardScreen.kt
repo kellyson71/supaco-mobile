@@ -1,5 +1,16 @@
 package io.github.kellyson71.supaco.ui.dashboard
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.blur
+import io.github.kellyson71.supaco.data.local.CacheStore
+import io.github.kellyson71.supaco.ui.conquistas.Achievement
+import io.github.kellyson71.supaco.ui.conquistas.AchievementUnlockedBanner
+import io.github.kellyson71.supaco.ui.conquistas.computeAchievements
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -63,8 +74,30 @@ fun DashboardScreen(
 
     var showAchievements by remember { mutableStateOf(false) }
     var showSearchServidores by remember { mutableStateOf(false) }
+    var fabExpanded by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings: SettingsManager = koinInject()
+    val cacheStore: CacheStore = koinInject()
+    val haptics = rememberHaptics()
+    val reduce = LocalReduceMotion.current
+
+    // Conquista nova desbloqueada desde a última vez: anuncia com cerimônia
+    var conquistaNova by remember { mutableStateOf<Achievement?>(null) }
+    LaunchedEffect(uiState.materias) {
+        if (uiState.materias.isEmpty() || !uiState.isCurrentPeriodo) return@LaunchedEffect
+        val desbloqueadas = computeAchievements(uiState.materias).filter { it.unlocked }
+        val ids = desbloqueadas.map { it.id }.toSet()
+        val conhecidas = cacheStore.celebratedAchievements
+        cacheStore.celebratedAchievements = (conhecidas ?: emptySet()) + ids
+        // Primeira vez: só registra, sem anunciar tudo de uma vez
+        if (conhecidas == null) return@LaunchedEffect
+        desbloqueadas.firstOrNull { it.id !in conhecidas }?.let { conquistaNova = it }
+    }
+
+    // Feedback tátil do resultado da sincronização
+    LaunchedEffect(uiState.snackMessage) {
+        if (uiState.snackMessage != null && uiState.snackIsError) haptics.rejeitar()
+    }
 
     // Android 13+: explica e pede a permissão de notificação uma única vez,
     // depois que o aluno já viu os próprios dados.
@@ -120,6 +153,12 @@ fun DashboardScreen(
             val alvo = vereditoDoDia(uiState.materias) ?: materiaMaisCritica(uiState.materias)
             alvo?.let { viewModel.openVerdict(it.codigoDiario) }
         }
+        // Notificação "Ver matéria": abre direto o detalhe daquela matéria
+        if (initialDest?.startsWith("materia:") == true && !verdictShortcutHandled && uiState.materias.isNotEmpty()) {
+            verdictShortcutHandled = true
+            val id = initialDest.removePrefix("materia:")
+            if (uiState.materias.any { it.codigoDiario == id }) viewModel.openDetail(id)
+        }
     }
 
     LaunchedEffect(initialDest) {
@@ -130,6 +169,10 @@ fun DashboardScreen(
                 "verdict" -> {
                     verdictShortcutHandled = false
                 }
+                else -> if (dest.startsWith("materia:")) {
+                    currentTab = Tab.MATERIAS
+                    verdictShortcutHandled = false
+                }
             }
         }
     }
@@ -137,14 +180,31 @@ fun DashboardScreen(
     val detailMateria = uiState.materias.find { it.codigoDiario == uiState.detailMateriaId }
     val verdictMateria = uiState.materias.find { it.codigoDiario == uiState.verdictMateriaId }
 
-    if (showAchievements) {
+    // Galeria de conquistas entra deslizando da direita (e volta para ela)
+    AnimatedContent(
+        targetState = showAchievements,
+        transitionSpec = {
+            if (targetState) {
+                (slideInHorizontally(Motion.calma(320)) { it / 3 } + fadeIn(Motion.calma(250))) togetherWith
+                    fadeOut(Motion.calma(150))
+            } else {
+                fadeIn(Motion.calma(250)) togetherWith
+                    (slideOutHorizontally(Motion.calma(250)) { it / 3 } + fadeOut(Motion.calma(150)))
+            }
+        },
+        label = "conquistas_screen",
+    ) { conquistasAbertas ->
+    if (conquistasAbertas) {
         io.github.kellyson71.supaco.ui.conquistas.ConquistasScreen(
             materias = uiState.materias,
             onBack = { showAchievements = false }
         )
     } else {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Com o speed dial aberto, o fundo desfoca (Android 12+) para focar nas ações
+            val blur by animateDpAsState(if (fabExpanded && !reduce) 6.dp else 0.dp, Motion.calma(250), label = "fab_blur")
             Scaffold(
+                modifier = Modifier.blur(blur),
                 contentWindowInsets = WindowInsets(0),
                 bottomBar = {
                     NavigationBar {
@@ -152,7 +212,10 @@ fun DashboardScreen(
                             val selected = tab == currentTab
                             NavigationBarItem(
                                 selected = selected,
-                                onClick = { currentTab = tab },
+                                onClick = {
+                                    if (!selected) haptics.tick()
+                                    currentTab = tab
+                                },
                                 icon = { Icon(if (selected) tab.iconFilled else tab.icon, contentDescription = tab.label) },
                                 label = { Text(tab.label) },
                             )
@@ -164,14 +227,9 @@ fun DashboardScreen(
                     targetState = currentTab,
                     modifier = Modifier.fillMaxSize().padding(padding),
                     transitionSpec = {
-                        val forward = targetState.index > initialState.index
-                        if (forward) {
-                            slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(200)) togetherWith
-                                slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut(tween(200))
-                        } else {
-                            slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(200)) togetherWith
-                                slideOutHorizontally(tween(300)) { it / 4 } + fadeOut(tween(200))
-                        }
+                        val dir = if (targetState.index > initialState.index) 1 else -1
+                        (slideInHorizontally(Motion.calma(300)) { it / 4 * dir } + fadeIn(Motion.calma(220))) togetherWith
+                            (slideOutHorizontally(Motion.calma(250)) { -it / 4 * dir } + fadeOut(Motion.calma(150)))
                     },
                     label = "tab_transition",
                 ) { tab ->
@@ -242,10 +300,21 @@ fun DashboardScreen(
                 }
             }
 
+            // Véu atrás do speed dial aberto
+            val scrimAlpha by animateFloatAsState(if (fabExpanded) 0.32f else 0f, Motion.calma(250), label = "fab_scrim")
+            if (scrimAlpha > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha)),
+                )
+            }
+
             // Speed-dial FAB (visible on all tabs except Perfil)
             val context = androidx.compose.ui.platform.LocalContext.current
             if (currentTab != Tab.PERFIL) {
                 SpeedDialFab(
+                    onExpandedChange = { fabExpanded = it },
                     onSync = { viewModel.sync() },
                     syncing = uiState.isSyncing,
                     actions = listOf(
@@ -303,16 +372,28 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Icon(
-                            Icons.Rounded.CloudDone,
+                            if (uiState.snackIsError) Icons.Rounded.CloudOff else Icons.Rounded.CloudDone,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.inversePrimary,
+                            tint = if (uiState.snackIsError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.inversePrimary,
                         )
                         Text(msg, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
+
+            // Conquista desbloqueada: card desce do topo
+            AchievementUnlockedBanner(
+                achievement = conquistaNova,
+                onOpen = {
+                    conquistaNova = null
+                    showAchievements = true
+                },
+                onDismiss = { conquistaNova = null },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
         }
+    }
     }
 
     // Verdict overlay

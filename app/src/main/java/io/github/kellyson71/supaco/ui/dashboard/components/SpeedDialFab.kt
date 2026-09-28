@@ -1,5 +1,12 @@
 package io.github.kellyson71.supaco.ui.dashboard.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.LaunchedEffect
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -36,8 +43,14 @@ fun SpeedDialFab(
     syncing: Boolean,
     actions: List<SpeedDialAction>,
     modifier: Modifier = Modifier,
+    onExpandedChange: (Boolean) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val haptics = rememberHaptics()
+    LaunchedEffect(expanded) {
+        onExpandedChange(expanded)
+        if (expanded) haptics.medium()
+    }
     val optionBounds = remember { mutableStateMapOf<Int, Rect>() }
     var fabCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var hoveredIndex by remember { mutableStateOf<Int?>(null) }
@@ -150,11 +163,13 @@ fun SpeedDialFab(
                                     break
                                 }
                             }
+                            if (found != hoveredIndex && found != null) haptics.tick()
                             hoveredIndex = found
                         },
                         onDragEnd = {
                             isDragging = false
                             hoveredIndex?.let { idx ->
+                                haptics.confirmar()
                                 actions.getOrNull(idx)?.onClick?.invoke()
                             }
                             expanded = false
@@ -178,11 +193,21 @@ fun SpeedDialFab(
                     animationSpec = spring(),
                     label = "fab_rotation"
                 )
-                Icon(
-                    if (expanded) Icons.Rounded.Close else Icons.Rounded.Sync,
-                    contentDescription = if (expanded) "Fechar" else "Sincronizar",
-                    modifier = Modifier.rotate(rotation),
-                )
+                // Sync ↔ X trocam girando em vez de cortar
+                AnimatedContent(
+                    targetState = expanded,
+                    transitionSpec = {
+                        (fadeIn(Motion.calma(180)) + scaleIn(Motion.viva(), initialScale = 0.5f)) togetherWith
+                            (fadeOut(Motion.calma(120)) + scaleOut(targetScale = 0.5f))
+                    },
+                    label = "fab_icon",
+                ) { isOpen ->
+                    Icon(
+                        if (isOpen) Icons.Rounded.Close else Icons.Rounded.Sync,
+                        contentDescription = if (isOpen) "Fechar" else "Sincronizar",
+                        modifier = Modifier.rotate(rotation),
+                    )
+                }
             },
             text = {
                 Text(if (expanded) "Fechar" else "Sincronizar")

@@ -37,6 +37,7 @@ data class DashboardUiState(
     val detailMateriaId: String? = null,
     val verdictMateriaId: String? = null,
     val snackMessage: String? = null,
+    val snackIsError: Boolean = false,
     val servers: List<Servidor> = emptyList(),
     val isSearchingServers: Boolean = false,
     val searchServersError: String? = null,
@@ -173,14 +174,14 @@ class DashboardViewModel(
             _uiState.update { it.copy(isSyncing = true) }
             val error = load()
             _uiState.update { it.copy(isSyncing = false) }
-            showSnack(error?.userMessage() ?: "Boletim sincronizado com o SUAP.")
+            showSnack(error?.userMessage() ?: "Boletim sincronizado com o SUAP.", isError = error != null)
         }
     }
 
-    private fun showSnack(message: String) {
+    private fun showSnack(message: String, isError: Boolean = false) {
         snackJob?.cancel()
         snackJob = viewModelScope.launch {
-            _uiState.update { it.copy(snackMessage = message) }
+            _uiState.update { it.copy(snackMessage = message, snackIsError = isError) }
             delay(3000)
             _uiState.update { it.copy(snackMessage = null) }
         }

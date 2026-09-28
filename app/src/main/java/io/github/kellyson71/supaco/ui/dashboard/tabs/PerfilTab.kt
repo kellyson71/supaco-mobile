@@ -1,5 +1,34 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import io.github.kellyson71.supaco.data.local.CacheStore
+import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.components.moodFor
+import io.github.kellyson71.supaco.ui.conquistas.computeAchievements
+import io.github.kellyson71.supaco.ui.motion.CountUpText
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.orSnap
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
+import kotlinx.coroutines.delay
+import org.koin.compose.koinInject
 import androidx.compose.foundation.layout.*
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,36 +72,30 @@ fun PerfilTab(
     val naCorda = materias.count { it.status in listOf(AbsenceStatus.NO, AbsenceStatus.LAST, AbsenceStatus.REPROVADO) }
     val piorMateria = materias.minByOrNull { it.restantes }
     val rank = rankDe(totalFaltas, LocalModoSerio.current)
+    val reduce = LocalReduceMotion.current
+    val haptics = rememberHaptics()
+    val cacheStore: CacheStore = koinInject()
+    // Frequência geral do semestre (faltas sobre a carga total)
+    val cargaTotal = materias.sumOf { it.total }
+    val freqGeral = if (cargaTotal > 0) (1f - totalFaltas.toFloat() / cargaTotal).coerceIn(0f, 1f) else 1f
 
-    // Lógicas de conquistas para o resumo
-    val cdfSupremo = materias.isNotEmpty() && materias.all { it.frequencia >= 100.0 }
-    val vivendoNoLimite = materias.any { it.restantes == 0 }
-    val ricoDeFaltas = folga > 10
-    val mestreDoSuap = materias.isNotEmpty()
-    val sobrevivente = materias.any { it.restantes == 1 }
-
-    // Novas conquistas (segredos)
-    val totalFaltasVal = totalFaltas
-    val naCordaVal = naCorda
-    val faltistaProfissional = totalFaltasVal > 30
-    val frequenciaImperial = materias.any { it.frequencia >= 100.0 }
-    val noLimiteDaMorte = naCordaVal >= 3
-    val equilibrado = materias.isNotEmpty() && materias.all { it.frequencia >= 80.0 }
-    val madrugador = materias.flatMap { it.horarios }.any { it.horaInicio == "07:00" }
-    
-    val materiasComNota = materias.filter { it.notaEtapa1 != null || it.notaEtapa2 != null || it.media?.toDoubleOrNull() != null }
-    val inabalavel = materiasComNota.isNotEmpty() && materiasComNota.all { m ->
-        val md = m.media?.toDoubleOrNull() ?: 0.0
-        val n1 = m.notaEtapa1 ?: 0.0
-        val n2 = m.notaEtapa2 ?: 0.0
-        md >= 90.0 || (n1 >= 90.0 && n2 >= 90.0)
+    // Rank mudou desde a última visita: entra "carimbando"
+    val stamp = remember { Animatable(1f) }
+    LaunchedEffect(rank, materias.isNotEmpty()) {
+        if (materias.isEmpty()) return@LaunchedEffect
+        val anterior = cacheStore.lastRank
+        cacheStore.lastRank = rank
+        if (anterior != null && anterior != rank && !reduce) {
+            stamp.snapTo(2.2f)
+            delay(300)
+            stamp.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 700f))
+            haptics.pesado()
+        }
     }
 
-    val totalAchievementsCount = 11
-    val unlockedCount = listOf(
-        cdfSupremo, vivendoNoLimite, ricoDeFaltas, mestreDoSuap, sobrevivente,
-        faltistaProfissional, frequenciaImperial, noLimiteDaMorte, equilibrado, madrugador, inabalavel
-    ).count { it }
+    val achievements = remember(materias) { computeAchievements(materias) }
+    val totalAchievementsCount = achievements.size
+    val unlockedCount = achievements.count { it.unlocked }
     val achievementsProgress = unlockedCount.toFloat() / totalAchievementsCount.toFloat()
 
     Scaffold(
@@ -100,7 +123,7 @@ fun PerfilTab(
             // Identity card
             item {
                 ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().enterOnce(0),
                     elevation = CardDefaults.elevatedCardElevation(1.dp),
                 ) {
                     Row(
@@ -108,13 +131,32 @@ fun PerfilTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        ShapeContainer(
-                            shape = OrgShape.FLOWER,
-                            size = 68.dp,
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        // Avatar: a flor gira devagar dentro de um anel com a frequência geral
+                        val ring = remember { Animatable(if (reduce) freqGeral else 0f) }
+                        LaunchedEffect(freqGeral) { ring.animateTo(freqGeral, tween(1000, delayMillis = 200, easing = Motion.EmphasizedDecelerate)) }
+                        val ringColor = MaterialTheme.colorScheme.primary
+                        val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(80.dp)
+                                .semantics { contentDescription = "Frequência geral ${(freqGeral * 100).toInt()}%" }
+                                .drawBehind {
+                                    val stroke = 4.dp.toPx()
+                                    drawArc(trackColor, 0f, 360f, false, style = Stroke(stroke, cap = StrokeCap.Round))
+                                    drawArc(ringColor, -90f, 360f * ring.value, false, style = Stroke(stroke, cap = StrokeCap.Round))
+                                },
                         ) {
-                            Icon(Icons.Rounded.Person, null, modifier = Modifier.size(36.dp))
+                            ShapeContainer(
+                                shape = OrgShape.FLOWER,
+                                size = 64.dp,
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                spin = true,
+                                breathe = true,
+                            ) {
+                                Icon(Icons.Rounded.Person, null, modifier = Modifier.size(34.dp))
+                            }
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
@@ -127,6 +169,11 @@ fun PerfilTab(
                             Surface(
                                 color = MaterialTheme.colorScheme.primary,
                                 shape = MaterialTheme.shapes.extraLarge,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = stamp.value
+                                    scaleY = stamp.value
+                                    rotationZ = (stamp.value - 1f) * -8f
+                                },
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
@@ -151,7 +198,7 @@ fun PerfilTab(
 
                 // Streak Card
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().enterOnce(1),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                     )
@@ -161,20 +208,53 @@ fun PerfilTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Chama cresce com a sequência e tremula; sem streak, fica apagada
+                        val flameSize by animateDpAsState(
+                            when {
+                                streakDays >= 14 -> 32.dp
+                                streakDays >= 7 -> 28.dp
+                                streakDays >= 1 -> 24.dp
+                                else -> 20.dp
+                            },
+                            Motion.viva<Dp>().orSnap(),
+                            label = "flame_size",
+                        )
+                        val flicker = if (streakDays > 0 && !reduce) {
+                            rememberInfiniteTransition(label = "flame").animateFloat(
+                                0.92f, 1.08f,
+                                infiniteRepeatable(tween(380, easing = Motion.Standard), RepeatMode.Reverse),
+                                label = "flame_flicker",
+                            ).value
+                        } else 1f
                         ShapeContainer(
                             shape = OrgShape.COOKIE,
                             size = 48.dp,
-                            containerColor = Color(0xFFFFAB40), // Orange tint
-                            contentColor = Color.White,
+                            containerColor = if (streakDays > 0) Color(0xFFFFAB40) else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (streakDays > 0) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            breathe = streakDays > 0,
                         ) {
-                            Icon(Icons.Rounded.Whatshot, null, modifier = Modifier.size(26.dp))
+                            Icon(
+                                Icons.Rounded.Whatshot, null,
+                                modifier = Modifier
+                                    .size(flameSize)
+                                    .graphicsLayer {
+                                        scaleX = 2f - flicker
+                                        scaleY = flicker
+                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                                    },
+                            )
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                if (streakDays > 0) "$streakDays dias de streak!" else "Comece o seu streak!",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            if (streakDays > 0) {
+                                CountUpText(
+                                    value = streakDays,
+                                    format = { "$it dias de streak!" },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            } else {
+                                Text("Comece o seu streak!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
                             Text(
                                 if (streakDays > 0) "Sem novas faltas no SUAP." else "Fique um dia sem faltas para iniciar.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -190,7 +270,7 @@ fun PerfilTab(
             // Stats grid 2x2
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().enterOnce(2),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     StatCard(
@@ -242,7 +322,7 @@ fun PerfilTab(
                         AbsenceStatus.NO, AbsenceStatus.REPROVADO -> Triple(vc.noContainer, vc.onNoContainer, vc.noSolid)
                     }
 
-                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth().enterOnce(3)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
                                 "MATÉRIA MAIS NO PERIGO",
@@ -255,11 +335,20 @@ fun PerfilTab(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                // No fio da navalha: o trevo fica tenso e treme de leve
+                                val tenso = pior.status in listOf(AbsenceStatus.LAST, AbsenceStatus.NO, AbsenceStatus.REPROVADO) && !reduce
+                                val tremor = if (tenso) {
+                                    rememberInfiniteTransition(label = "tense").animateFloat(
+                                        -3f, 3f, infiniteRepeatable(tween(90), RepeatMode.Reverse), label = "tense_jitter",
+                                    ).value
+                                } else 0f
                                 ShapeContainer(
                                     shape = OrgShape.CLOVER,
                                     size = 44.dp,
                                     containerColor = container,
                                     contentColor = solid,
+                                    mood = moodFor(pior.status),
+                                    extraRotation = tremor,
                                 ) {
                                     Icon(pior.icone, null, modifier = Modifier.size(22.dp))
                                 }
@@ -325,8 +414,12 @@ fun PerfilTab(
 
                         Spacer(Modifier.height(12.dp))
 
+                        val achFill = remember { Animatable(if (reduce) achievementsProgress else 0f) }
+                        LaunchedEffect(achievementsProgress) {
+                            achFill.animateTo(achievementsProgress, tween(900, delayMillis = 250, easing = Motion.EmphasizedDecelerate))
+                        }
                         LinearProgressIndicator(
-                            progress = { achievementsProgress },
+                            progress = { achFill.value },
                             modifier = Modifier.fillMaxWidth().height(6.dp),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -443,7 +536,12 @@ private fun StatCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Icon(icon, null, modifier = Modifier.size(22.dp), tint = color)
             Spacer(Modifier.height(8.dp))
-            Text(value, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            val numeric = value.toIntOrNull()
+            if (numeric != null) {
+                CountUpText(numeric, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            } else {
+                Text(value, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            }
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
