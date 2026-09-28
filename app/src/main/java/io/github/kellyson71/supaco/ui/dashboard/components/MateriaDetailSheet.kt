@@ -1,5 +1,22 @@
 package io.github.kellyson71.supaco.ui.dashboard.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.key
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import io.github.kellyson71.supaco.ui.components.geometry
+import io.github.kellyson71.supaco.ui.components.moodFor
+import io.github.kellyson71.supaco.ui.motion.CountUpText
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.OdometerText
+import io.github.kellyson71.supaco.ui.motion.orSnap
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
 import androidx.compose.foundation.layout.*
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.rememberScrollState
@@ -40,6 +57,7 @@ fun MateriaDetailSheet(
 
     val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
     val freqValue = (materia.frequencia / 100.0).toFloat().coerceIn(0f, 1f)
+    val reduce = LocalReduceMotion.current
 
     ModalBottomSheet(onDismissRequest = onClose) {
         Column(
@@ -56,11 +74,22 @@ fun MateriaDetailSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                // A forma "chega" girando e crescendo, como se viesse do card
+                val arrive = remember { Animatable(if (reduce) 1f else 0f) }
+                LaunchedEffect(Unit) { arrive.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 260f)) }
                 ShapeContainer(
                     shape = materia.shape,
                     size = 56.dp,
                     containerColor = container,
                     contentColor = solid,
+                    mood = moodFor(materia.status),
+                    breathe = true,
+                    extraRotation = (1f - arrive.value) * -120f,
+                    modifier = Modifier.graphicsLayer {
+                        val sc = 0.5f + 0.5f * arrive.value
+                        scaleX = sc
+                        scaleY = sc
+                    },
                 ) {
                     Icon(materia.icone, null, modifier = Modifier.size(28.dp))
                 }
@@ -99,17 +128,23 @@ fun MateriaDetailSheet(
             ) {
                 // Circular frequency ring
                 Box(contentAlignment = Alignment.Center) {
+                    // Anel desenha de 0 até o valor e o número conta junto
+                    val ring = remember { Animatable(if (reduce) freqValue else 0f) }
+                    LaunchedEffect(freqValue) { ring.animateTo(freqValue, tween(800, delayMillis = 150, easing = Motion.EmphasizedDecelerate)) }
                     CircularProgressIndicator(
-                        progress = { freqValue },
+                        progress = { ring.value },
                         modifier = Modifier.size(100.dp),
                         strokeWidth = 8.dp,
                         color = solid,
                         trackColor = container,
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "${materia.frequencia.toInt()}%",
-                            fontSize = 20.sp,
+                        CountUpText(
+                            value = materia.frequencia.toInt(),
+                            delayMs = 150,
+                            durationMs = 800,
+                            format = { "$it%" },
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -199,14 +234,60 @@ private fun SimuladorFaltas(materia: MateriaDisplay) {
         ((materia.total - faltasFuturas).toDouble() / materia.total.toDouble() * 100.0).coerceIn(0.0, 100.0)
     } else 100.0
 
+    // Haptics: tique a cada falta, médio ao mudar de faixa, pesado ao estourar o limite
+    val haptics = rememberHaptics()
+    val reduce = LocalReduceMotion.current
+    val shake = remember { Animatable(0f) }
+    var lastStatus by remember(materia.codigoDiario) { mutableStateOf(statusFuturo) }
+    var lastExtras by remember(materia.codigoDiario) { mutableIntStateOf(0) }
+    LaunchedEffect(faltasExtras) {
+        if (faltasExtras == lastExtras) return@LaunchedEffect
+        lastExtras = faltasExtras
+        val estourou = restantesFuturos < 0 && lastStatus != AbsenceStatus.REPROVADO
+        when {
+            estourou -> {
+                haptics.pesado()
+                if (!reduce) {
+                    repeat(4) { i -> shake.animateTo(if (i % 2 == 0) 6f else -6f, tween(40)) }
+                    shake.animateTo(0f, spring(0.3f, 600f))
+                }
+            }
+            statusFuturo != lastStatus -> haptics.medium()
+            else -> haptics.tick()
+        }
+        lastStatus = statusFuturo
+    }
+
+    // O card se tinge com a cor da faixa simulada
+    val tint by animateColorAsState(
+        targetValue = if (faltasExtras == 0) MaterialTheme.colorScheme.surfaceContainerLow
+        else lerp(MaterialTheme.colorScheme.surfaceContainerLow, fContainer, 0.55f),
+        animationSpec = Motion.calma<Color>(350).orSnap(),
+        label = "sim_tint",
+    )
+
+    // Cada falta gasta murcha uma pétala; passando do limite, a flor vira pedra
+    val petalas = OrgShape.FLOWER.geometry.bumps
+    val usadoFrac = if (materia.limite > 0) faltasFuturas.toFloat() / materia.limite else 1f
+    val simShape = if (restantesFuturos < 0) OrgShape.PEBBLE else OrgShape.FLOWER
+
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = tint,
         shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { translationX = shake.value * density },
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Rounded.Casino, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                ShapeContainer(
+                    shape = simShape,
+                    size = 28.dp,
+                    containerColor = fSolid,
+                    contentColor = fContainer,
+                    morph = true,
+                    wilted = if (simShape == OrgShape.FLOWER) (usadoFrac * petalas).coerceIn(0f, petalas.toFloat()) else 0f,
+                )
                 Text(
                     "Simulador de Presença/Faltas",
                     style = MaterialTheme.typography.titleSmall,
@@ -239,13 +320,21 @@ private fun SimuladorFaltas(materia: MateriaDisplay) {
             }
 
             // Resultado da simulação
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                 Icon(metaFuturo.icon, null, modifier = Modifier.size(18.dp), tint = fSolid)
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    "Frequência simulada: ${freqFutura.toInt()}%",
+                    "Frequência simulada: ",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = fSolid,
+                )
+                OdometerText(
+                    "${freqFutura.toInt()}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = fSolid,
+                    increasing = faltasExtras <= 0,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -302,6 +391,24 @@ private fun NotasSection(materia: MateriaDisplay) {
         situacaoMateria == AbsenceStatus.GO -> true
         situacaoMateria == AbsenceStatus.REPROVADO -> false
         else -> mfdSimulada >= 60.0
+    }
+
+    // Cruzar os 60 na simulação: comemora (ou afunda) com haptic
+    val haptics = rememberHaptics()
+    var aprovadoAntes by remember(materia.codigoDiario) { mutableStateOf(aprovadoFinal) }
+    var celebrar by remember { mutableIntStateOf(0) }
+    LaunchedEffect(aprovadoFinal) {
+        if (!simularAtivo || aprovadoFinal == aprovadoAntes) {
+            aprovadoAntes = aprovadoFinal
+            return@LaunchedEffect
+        }
+        if (aprovadoFinal) {
+            haptics.alegre()
+            celebrar++
+        } else {
+            haptics.rejeitar()
+        }
+        aprovadoAntes = aprovadoFinal
     }
 
     Surface(
@@ -430,7 +537,9 @@ private fun NotasSection(materia: MateriaDisplay) {
                             NotaChipSimulada(
                                 label = if (situacaoMateria == AbsenceStatus.WARN) "Média Final" else "Média",
                                 nota = mfdSimulada,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                destaque = true,
+                                celebrar = celebrar,
                             )
                         }
                     }
@@ -444,7 +553,9 @@ private fun NotasSection(materia: MateriaDisplay) {
                         NotaChipSimulada(
                             label = if (situacaoMateria == AbsenceStatus.WARN) "Média Final" else "Média",
                             nota = mfdSimulada,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            destaque = true,
+                            celebrar = celebrar,
                         )
                     }
                 }
@@ -507,12 +618,26 @@ private fun NotasSection(materia: MateriaDisplay) {
                     Spacer(Modifier.height(4.dp))
                     
                     if (nafNecessaria != -1) {
-                        Text(
-                            "Você precisa de no mínimo $nafNecessaria no Exame para ser aprovado.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row {
+                            Text(
+                                "Você precisa de no mínimo ",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            OdometerText(
+                                "$nafNecessaria",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                " no Exame.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     } else {
                         Text(
                             "Matematicamente impossível passar, mesmo com 100 no Exame.",
@@ -591,26 +716,79 @@ private fun NotasSection(materia: MateriaDisplay) {
 }
 
 @Composable
-private fun NotaChipSimulada(label: String, nota: Double, modifier: Modifier = Modifier) {
+private fun NotaChipSimulada(
+    label: String,
+    nota: Double,
+    modifier: Modifier = Modifier,
+    destaque: Boolean = false,
+    celebrar: Int = 0,
+) {
     val aprovada = nota >= 60.0
-    Surface(
-        color = if (aprovada) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium,
-        modifier = modifier,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(vertical = 10.dp),
+    val reduce = LocalReduceMotion.current
+    // Média que cruza os 60: pula para cima; caindo abaixo, afunda e perde cor
+    val jump = remember { Animatable(0f) }
+    LaunchedEffect(aprovada) {
+        if (!destaque || reduce) return@LaunchedEffect
+        if (aprovada) {
+            jump.animateTo(-10f, tween(120, easing = Motion.EmphasizedDecelerate))
+            jump.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 500f))
+        } else {
+            jump.animateTo(4f, tween(160))
+            jump.animateTo(0f, tween(260))
+        }
+    }
+    val bg by animateColorAsState(
+        if (aprovada) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        animationSpec = Motion.calma<Color>(300).orSnap(),
+        label = "nota_bg",
+    )
+    Box(modifier) {
+        Surface(
+            color = bg,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth().graphicsLayer { translationY = jump.value * density },
         ) {
-            Text(
-                "${nota.toInt()}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (!aprovada) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurface,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(vertical = 10.dp),
+            ) {
+                OdometerText(
+                    "${nota.toInt()}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (!aprovada) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (celebrar > 0 && destaque && !reduce) {
+            key(celebrar) { MiniConfetti(Modifier.matchParentSize()) }
+        }
+    }
+}
+
+/** Meia dúzia de partículas saindo do chip — comemoração discreta. */
+@Composable
+private fun MiniConfetti(modifier: Modifier = Modifier) {
+    val colors = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.tertiary,
+        MaterialTheme.verdictColors.goSolid,
+    )
+    val t = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { t.animateTo(1f, tween(700, easing = Motion.EmphasizedDecelerate)) }
+    val angles = remember { List(7) { i -> -150f + i * 20f + kotlin.random.Random.nextFloat() * 10f } }
+    Canvas(modifier) {
+        if (t.value >= 1f) return@Canvas
+        val origin = Offset(size.width / 2f, size.height * 0.3f)
+        angles.forEachIndexed { i, deg ->
+            val rad = Math.toRadians(deg.toDouble())
+            val dist = size.width * 0.55f * t.value
+            val p = Offset(
+                origin.x + (kotlin.math.cos(rad) * dist).toFloat(),
+                origin.y + (kotlin.math.sin(rad) * dist).toFloat() + 40f * t.value * t.value,
             )
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            drawCircle(colors[i % colors.size].copy(alpha = 1f - t.value), radius = 3.5.dp.toPx(), center = p)
         }
     }
 }
