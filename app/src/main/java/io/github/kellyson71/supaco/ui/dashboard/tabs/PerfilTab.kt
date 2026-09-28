@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import io.github.kellyson71.supaco.data.local.CacheStore
 import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.components.pressScale
 import io.github.kellyson71.supaco.ui.components.moodFor
 import io.github.kellyson71.supaco.ui.conquistas.computeAchievements
 import io.github.kellyson71.supaco.ui.motion.CountUpText
@@ -64,6 +65,7 @@ fun PerfilTab(
     onLogout: () -> Unit,
     onOpenSettings: () -> Unit = {},
     onViewAchievements: () -> Unit = {},
+    onOpenResumo: () -> Unit = {},
 ) {
 
     val vc = MaterialTheme.verdictColors
@@ -427,6 +429,50 @@ fun PerfilTab(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+            }
+
+            // Resumo do semestre (estilo "Wrapped")
+            if (materias.isNotEmpty()) {
+                item {
+                    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    Card(
+                        onClick = onOpenResumo,
+                        interactionSource = interaction,
+                        modifier = Modifier.fillMaxWidth().pressScale(interaction),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            ShapeContainer(
+                                shape = OrgShape.FLOWER,
+                                size = 44.dp,
+                                containerColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                spin = true,
+                            ) {
+                                Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(22.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Resumo do semestre",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                                Text(
+                                    "seus números em telas pra compartilhar",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f),
+                                )
+                            }
+                            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
             }
 
             // Buscar Servidores Card

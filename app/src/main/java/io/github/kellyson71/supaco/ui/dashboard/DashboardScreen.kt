@@ -75,6 +75,7 @@ fun DashboardScreen(
     var showAchievements by remember { mutableStateOf(false) }
     var showSearchServidores by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
+    var showResumo by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings: SettingsManager = koinInject()
     val cacheStore: CacheStore = koinInject()
@@ -293,6 +294,7 @@ fun DashboardScreen(
                             },
                             onOpenSettings = onOpenSettings,
                             onViewAchievements = { showAchievements = true },
+                            onOpenResumo = { showResumo = true },
                             onLogout = { viewModel.logout() },
                         )
 
@@ -394,6 +396,16 @@ fun DashboardScreen(
             )
         }
     }
+    }
+
+    if (showResumo) {
+        io.github.kellyson71.supaco.ui.resumo.ResumoSemestre(
+            nome = uiState.profile?.nomeUsual ?: "aluno",
+            periodo = uiState.selectedPeriodo?.label ?: "",
+            materias = uiState.materias,
+            streakDays = uiState.streakDays,
+            onClose = { showResumo = false },
+        )
     }
 
     // Verdict overlay

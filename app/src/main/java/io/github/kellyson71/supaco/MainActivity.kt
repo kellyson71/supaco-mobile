@@ -285,6 +285,8 @@ private fun BiometricAskScreen(onEnable: () -> Unit, onSkip: () -> Unit) {
         ShapeContainer(
             shape = OrgShape.FLOWER,
             size = 96.dp,
+            breathe = true,
+            spin = true,
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ) {
@@ -333,6 +335,8 @@ private fun LockedScreen(onRetry: () -> Unit, onUseLogin: () -> Unit) {
         ShapeContainer(
             shape = OrgShape.COOKIE,
             size = 96.dp,
+            breathe = true,
+            spin = true,
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
