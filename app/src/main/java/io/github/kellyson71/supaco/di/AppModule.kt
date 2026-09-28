@@ -7,6 +7,7 @@ import io.github.kellyson71.supaco.data.local.CacheStore
 import io.github.kellyson71.supaco.data.local.FaltasHistory
 import io.github.kellyson71.supaco.data.local.SettingsManager
 import io.github.kellyson71.supaco.data.local.TokenManager
+import io.github.kellyson71.supaco.data.local.TokenStore
 import io.github.kellyson71.supaco.data.remote.AuthInterceptor
 import io.github.kellyson71.supaco.data.remote.SuapApi
 import io.github.kellyson71.supaco.data.remote.SuapRefreshApi
@@ -27,6 +28,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.core.qualifier.named
+import org.koin.dsl.bind
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -39,7 +41,7 @@ val appModule = module {
 
     single { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
 
-    single { TokenManager(androidContext()) }
+    single { TokenManager(androidContext()) } bind TokenStore::class
     single { SettingsManager(androidContext()) }
     single { CacheStore(androidContext()) }
     single { FaltasHistory(androidContext()) }

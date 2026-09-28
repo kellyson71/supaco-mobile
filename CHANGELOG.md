@@ -2,7 +2,7 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versões seguem [SemVer](https://semver.org/lang/pt-BR/).
 
-## [2.0] — não lançada
+## [2.0] — 2026-09-28
 
 > ⚠️ **Novo identificador do app** (`io.github.kellyson71.supaco`) e nova assinatura. Desinstale a versão 1.x antes de instalar a 2.0.
 
