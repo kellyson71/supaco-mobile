@@ -1,5 +1,20 @@
 package io.github.kellyson71.supaco.ui.auth
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,8 +51,13 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val haptics = rememberHaptics()
+    val reduce = LocalReduceMotion.current
     LaunchedEffect(uiState.isSuccess) {
         if (uiState.isSuccess) {
+            haptics.confirmar()
+            // Dá tempo da flor crescer e virar a entrada do app
+            if (!reduce) delay(420)
             onLoginSuccess()
             viewModel.resetState()
         }
@@ -55,6 +75,38 @@ fun LoginContent(
     var senha by remember { mutableStateOf("") }
     var senhaVisivel by remember { mutableStateOf(false) }
     val submit = { if (!uiState.isLoading) onLoginClick(matricula, senha) }
+    val reduce = LocalReduceMotion.current
+    val haptics = rememberHaptics()
+
+    // Senha errada: os campos chacoalham e o celular recusa
+    val shake = remember { Animatable(0f) }
+    // O aviso de sessão expirada já chega pronto na abertura: esse não chacoalha
+    val erroInicial = remember { uiState.error }
+    LaunchedEffect(uiState.error) {
+        if (uiState.error == null || uiState.error == erroInicial) return@LaunchedEffect
+        haptics.rejeitar()
+        if (!reduce) {
+            repeat(3) {
+                shake.animateTo(8f, tween(50))
+                shake.animateTo(-8f, tween(50))
+            }
+            shake.animateTo(0f, spring(dampingRatio = 0.4f, stiffness = 800f))
+        }
+    }
+
+    // Flor: entra girando meia volta, gira sozinha enquanto valida e cresce no sucesso
+    val arrive = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(Unit) { arrive.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 200f)) }
+    val loadingSpin = if (uiState.isLoading && !reduce) {
+        rememberInfiniteTransition(label = "login_spin").animateFloat(
+            0f, 360f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "login_spin_v",
+        ).value
+    } else 0f
+    val successGrow by animateFloatAsState(
+        targetValue = if (uiState.isSuccess && !reduce) 1f else 0f,
+        animationSpec = tween(420, easing = Motion.EmphasizedAccelerate),
+        label = "login_success",
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -74,6 +126,15 @@ fun LoginContent(
                 size = 88.dp,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                breathe = uiState.isLoading,
+                extraRotation = (1f - arrive.value) * -180f + loadingSpin,
+                modifier = Modifier
+                    .zIndex(1f)
+                    .graphicsLayer {
+                        val sc = (0.4f + 0.6f * arrive.value) * (1f + successGrow * 12f)
+                        scaleX = sc
+                        scaleY = sc
+                    },
             ) {
                 Icon(Icons.Rounded.School, contentDescription = null, modifier = Modifier.size(44.dp))
             }
@@ -81,6 +142,7 @@ fun LoginContent(
             Spacer(Modifier.height(16.dp))
 
             Text(
+                modifier = Modifier.enterOnce(1, stepMs = 60).graphicsLayer { alpha = 1f - successGrow },
                 text = "Supaco",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
@@ -94,12 +156,23 @@ fun LoginContent(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 280.dp),
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .enterOnce(2, stepMs = 60)
+                    .graphicsLayer { alpha = 1f - successGrow },
             )
 
             Spacer(Modifier.height(40.dp))
 
             // Form
+            Column(
+                Modifier
+                    .enterOnce(3, stepMs = 60)
+                    .graphicsLayer {
+                        translationX = shake.value * density
+                        alpha = 1f - successGrow
+                    },
+            ) {
             OutlinedTextField(
                 value = matricula,
                 onValueChange = { matricula = it.filter { c -> c.isDigit() }.take(14) },
@@ -132,7 +205,9 @@ fun LoginContent(
                 keyboardActions = KeyboardActions(onDone = { submit() }),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
+                isError = uiState.error != null,
             )
+            }
 
             Spacer(Modifier.height(16.dp))
 
@@ -153,7 +228,11 @@ fun LoginContent(
 
             Button(
                 onClick = submit,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .enterOnce(4, stepMs = 60)
+                    .graphicsLayer { alpha = 1f - successGrow },
                 enabled = !uiState.isLoading,
                 shape = MaterialTheme.shapes.extraLarge,
             ) {
@@ -168,6 +247,16 @@ fun LoginContent(
                     Spacer(Modifier.width(8.dp))
                     Text("Entrar", style = MaterialTheme.typography.labelLarge)
                 }
+            }
+
+            // Enquanto valida, uma linha discreta no lugar do antigo overlay escuro
+            AnimatedVisibility(visible = uiState.isLoading) {
+                Text(
+                    "Validando matrícula…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -190,33 +279,5 @@ fun LoginContent(
             Spacer(Modifier.height(24.dp))
         }
 
-        // Loading overlay
-        AnimatedVisibility(
-            visible = uiState.isLoading,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(0.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.38f),
-                ) {}
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "Validando matrícula…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-        }
     }
 }
