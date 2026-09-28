@@ -77,6 +77,15 @@ class SettingsManager(private val context: Context) {
         get() = prefs.getBoolean(KEY_NOTIF_ASKED, false)
         set(value) = prefs.edit { putBoolean(KEY_NOTIF_ASKED, value) }
 
+    /** Menos movimento: sem tremor, confete, respiração nem suspense. */
+    private val _reduceMotion = MutableStateFlow(prefs.getBoolean(KEY_REDUCE_MOTION, false))
+    val reduceMotion: StateFlow<Boolean> = _reduceMotion.asStateFlow()
+
+    fun setReduceMotion(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_REDUCE_MOTION, enabled) }
+        _reduceMotion.value = enabled
+    }
+
     fun setModoSerio(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_MODO_SERIO, enabled) }
         _modoSerio.value = enabled
@@ -209,6 +218,7 @@ class SettingsManager(private val context: Context) {
         const val KEY_NOTIFICATIONS = "notifications_enabled"
         const val KEY_NOTIFY_LEVEL = "notify_level"
         const val KEY_MODO_SERIO = "modo_serio"
+        const val KEY_REDUCE_MOTION = "reduce_motion"
         const val KEY_NOTIF_ASKED = "notif_permission_asked"
 
         const val DEFAULT_PALETTE = "violeta"

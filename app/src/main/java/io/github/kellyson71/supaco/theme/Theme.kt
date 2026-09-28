@@ -1,5 +1,12 @@
 package io.github.kellyson71.supaco.theme
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.Motion
 import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -94,7 +101,8 @@ fun SupacoMobileTheme(
 
     // Quando há fundo personalizado, deixamos o background do tema transparente
     // para a imagem aparecer atrás dos Scaffolds (os cards continuam opacos/legíveis).
-    val colorScheme = if (background != null) baseScheme.copy(background = Color.Transparent) else baseScheme
+    val animatedScheme = animateColorScheme(baseScheme)
+    val colorScheme = if (background != null) animatedScheme.copy(background = Color.Transparent) else animatedScheme
 
     val verdictColors = if (darkTheme) DarkVerdictColors else LightVerdictColors
 
@@ -105,18 +113,31 @@ fun SupacoMobileTheme(
         ) {
             if (background != null) {
                 Box(modifier = Modifier.fillMaxSize()) {
+                    // Foto nova entra com fade e um zoom leve (105% → 100%)
+                    val reduce = LocalReduceMotion.current
+                    val appear = remember(background.bitmap) { Animatable(if (reduce) 1f else 0f) }
+                    LaunchedEffect(background.bitmap) {
+                        appear.animateTo(1f, tween(700, easing = Motion.EmphasizedDecelerate))
+                    }
                     Image(
                         bitmap = background.bitmap,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = appear.value
+                                val zoom = 1.05f - 0.05f * appear.value
+                                scaleX = zoom
+                                scaleY = zoom
+                            },
                     )
                     // Véu sobre a foto, com a cor de fundo original do tema, para
                     // manter legibilidade. Quanto maior a opacidade escolhida, mais a foto aparece.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(baseScheme.background.copy(alpha = 1f - background.opacity)),
+                            .background(animatedScheme.background.copy(alpha = 1f - background.opacity)),
                     )
                     content()
                 }

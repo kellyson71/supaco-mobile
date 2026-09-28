@@ -9,6 +9,8 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import io.github.kellyson71.supaco.data.session.SessionManager
 import io.github.kellyson71.supaco.data.session.SessionState
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
+import io.github.kellyson71.supaco.ui.motion.LocalReduceMotion
+import io.github.kellyson71.supaco.ui.motion.rememberSystemReduceMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -132,6 +134,8 @@ class MainActivity : FragmentActivity() {
             val bgOpacity by settings.backgroundOpacity.collectAsStateWithLifecycle()
             val bgVersion by settings.backgroundVersion.collectAsStateWithLifecycle()
             val modoSerio by settings.modoSerio.collectAsStateWithLifecycle()
+            val reduceMotionPref by settings.reduceMotion.collectAsStateWithLifecycle()
+            val reduceMotion = reduceMotionPref || rememberSystemReduceMotion()
             val sessionState by sessionManager.state.collectAsStateWithLifecycle()
 
             val darkTheme = when (themeMode) {
@@ -152,7 +156,10 @@ class MainActivity : FragmentActivity() {
             }
             val background = backgroundBitmap?.let { AppBackground(it, bgOpacity) }
 
-            CompositionLocalProvider(LocalModoSerio provides modoSerio) {
+            CompositionLocalProvider(
+                LocalModoSerio provides modoSerio,
+                LocalReduceMotion provides reduceMotion,
+            ) {
                 SupacoMobileTheme(
                     darkTheme = darkTheme,
                     dynamicColor = dynamicColor,
