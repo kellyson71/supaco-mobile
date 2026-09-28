@@ -1,5 +1,23 @@
 package io.github.kellyson71.supaco.ui.dashboard.tabs
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import io.github.kellyson71.supaco.ui.components.PulseRing
+import io.github.kellyson71.supaco.ui.components.enterOnce
+import io.github.kellyson71.supaco.ui.components.moodFor
+import io.github.kellyson71.supaco.ui.components.pressScale
+import io.github.kellyson71.supaco.ui.motion.CountUpText
+import io.github.kellyson71.supaco.ui.motion.Motion
+import io.github.kellyson71.supaco.ui.motion.orSnap
+import io.github.kellyson71.supaco.ui.motion.rememberHaptics
 import androidx.compose.foundation.Canvas
 import io.github.kellyson71.supaco.ui.dashboard.LocalModoSerio
 import androidx.compose.foundation.layout.*
@@ -71,6 +89,16 @@ fun HorariosTab(
     val agenda = remember(materias) { buildAgenda(materias) }
     val totalSemana = agenda.sumOf { it.aulas.size }
     val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    // Relógio da timeline: atualiza a cada 30 s
+    val now by produceState(io.github.kellyson71.supaco.data.ScheduleData.nowMinutes()) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            value = io.github.kellyson71.supaco.data.ScheduleData.nowMinutes()
+        }
+    }
+    // Incrementa para fazer o cabeçalho de hoje piscar depois do "ir para hoje"
+    var flashToday by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -87,7 +115,11 @@ fun HorariosTab(
                         val hojeIdx = agenda.indexOfFirst { it.ehHoje }
                         val targetIdx = if (hojeIdx >= 0) hojeIdx else 0
                         if (agenda.isNotEmpty()) {
-                            scope.launch { listState.animateScrollToItem(targetIdx + 1) }
+                            haptics.tick()
+                            scope.launch {
+                                listState.animateScrollToItem(targetIdx + 1)
+                                flashToday++
+                            }
                         }
                     }) {
                         Icon(Icons.Rounded.Today, contentDescription = "Ir para hoje")
@@ -106,7 +138,8 @@ fun HorariosTab(
                 ElevatedCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .enterOnce(),
                     elevation = CardDefaults.elevatedCardElevation(1.dp),
                 ) {
                     Row(
@@ -114,12 +147,18 @@ fun HorariosTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        ShapeContainer(OrgShape.COOKIE, 44.dp, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) {
+                        ShapeContainer(
+                            OrgShape.COOKIE, 44.dp,
+                            MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer,
+                            breathe = true,
+                            spin = true,
+                        ) {
                             Icon(Icons.Rounded.CalendarMonth, null, modifier = Modifier.size(24.dp))
                         }
                         Column {
-                            Text(
-                                "$totalSemana aulas essa semana",
+                            CountUpText(
+                                value = totalSemana,
+                                format = { "$it aulas essa semana" },
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -134,9 +173,15 @@ fun HorariosTab(
             }
 
             // Day sections
-            agenda.forEach { dia ->
+            agenda.forEachIndexed { index, dia ->
                 item(key = dia.dia) {
-                    DiaSection(dia = dia, onOpenDetail = onOpenDetail)
+                    DiaSection(
+                        dia = dia,
+                        now = now,
+                        flash = if (dia.ehHoje) flashToday else 0,
+                        onOpenDetail = onOpenDetail,
+                        modifier = Modifier.enterOnce(index + 1),
+                    )
                 }
             }
         }
@@ -146,14 +191,36 @@ fun HorariosTab(
 @Composable
 private fun DiaSection(
     dia: DiaAgenda,
+    now: Int,
+    flash: Int,
     onOpenDetail: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+    // Pisca a cor primária uma vez quando o usuário pede "ir para hoje"
+    val flashAlpha = remember { Animatable(0f) }
+    LaunchedEffect(flash) {
+        if (flash > 0) {
+            flashAlpha.snapTo(0.35f)
+            flashAlpha.animateTo(0f, tween(900, easing = Motion.Standard))
+        }
+    }
+    val flashColor = MaterialTheme.colorScheme.primary
+    Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         // Day header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(vertical = 12.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .drawBehind {
+                    if (flashAlpha.value > 0f) {
+                        drawRoundRect(
+                            flashColor.copy(alpha = flashAlpha.value),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f),
+                        )
+                    }
+                }
+                .padding(vertical = 4.dp, horizontal = 4.dp),
         ) {
             if (dia.ehHoje) {
                 Surface(
@@ -194,16 +261,30 @@ private fun DiaSection(
 
         // Timeline items
         dia.aulas.forEachIndexed { i, aula ->
-            val currentMinutes = io.github.kellyson71.supaco.data.ScheduleData.nowMinutes()
             val startMinutes = io.github.kellyson71.supaco.data.ScheduleData.parseMinutes(aula.entry.horaInicio)
             val endMinutes = io.github.kellyson71.supaco.data.ScheduleData.parseMinutes(aula.entry.horaFim)
-            val isHappeningNow = dia.ehHoje && startMinutes != -1 && endMinutes != -1 && currentMinutes in startMinutes..endMinutes
+            val valid = startMinutes != -1 && endMinutes != -1
+            val isHappeningNow = dia.ehHoje && valid && now in startMinutes until endMinutes
+            val isPast = dia.ehHoje && valid && now >= endMinutes
+            // Quanto do conector até a próxima aula já "passou" (só hoje)
+            val nextStart = dia.aulas.getOrNull(i + 1)?.let {
+                io.github.kellyson71.supaco.data.ScheduleData.parseMinutes(it.entry.horaInicio)
+            }
+            val connectorProgress = when {
+                !dia.ehHoje || !valid -> 0f
+                now <= startMinutes -> 0f
+                nextStart == null || nextStart <= startMinutes -> if (now >= endMinutes) 1f else 0f
+                else -> ((now - startMinutes).toFloat() / (nextStart - startMinutes)).coerceIn(0f, 1f)
+            }
 
             TimelineRow(
                 materia = aula.materia,
                 entry = aula.entry,
                 isLast = i == dia.aulas.size - 1,
                 isHappeningNow = isHappeningNow,
+                isPast = isPast,
+                isToday = dia.ehHoje,
+                connectorProgress = connectorProgress,
                 onOpen = { onOpenDetail(aula.materia.codigoDiario) },
             )
         }
@@ -216,6 +297,9 @@ private fun TimelineRow(
     entry: io.github.kellyson71.supaco.data.ScheduleEntry,
     isLast: Boolean,
     isHappeningNow: Boolean,
+    isPast: Boolean,
+    isToday: Boolean,
+    connectorProgress: Float,
     onOpen: () -> Unit,
 ) {
     val vc = MaterialTheme.verdictColors
@@ -227,9 +311,12 @@ private fun TimelineRow(
     }
     val meta = verdictMetaFor(materia.status, serio = LocalModoSerio.current)
     val lineColor = MaterialTheme.colorScheme.outlineVariant
+    val doneColor = MaterialTheme.colorScheme.primary
+    val progress by animateFloatAsState(connectorProgress, Motion.calma<Float>(800).orSnap(), label = "connector")
+    val pastAlpha by animateFloatAsState(if (isPast) 0.55f else 1f, Motion.calma<Float>(400).orSnap(), label = "past_alpha")
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = pastAlpha },
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         // Time rail
@@ -246,34 +333,51 @@ private fun TimelineRow(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.width(20.dp),
         ) {
-            val connectorColor = lineColor
-            Canvas(modifier = Modifier.size(20.dp, 20.dp)) {
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                if (isHappeningNow) {
-                    drawCircle(color = solid.copy(alpha = 0.2f), radius = cx * 2.2f, center = Offset(cx, cy))
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                // Aula acontecendo: anel pulsando em volta do ponto
+                if (isHappeningNow) PulseRing(solid, Modifier.requiredSize(36.dp))
+                Canvas(modifier = Modifier.size(20.dp, 20.dp)) {
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    if (isHappeningNow) {
+                        drawCircle(color = solid.copy(alpha = 0.2f), radius = cx * 2.2f, center = Offset(cx, cy))
+                    }
+                    drawCircle(color = container, radius = cx * 1.5f, center = Offset(cx, cy))
+                    drawCircle(color = solid, radius = cx * 0.7f, center = Offset(cx, cy))
                 }
-                drawCircle(color = container, radius = cx * 1.5f, center = Offset(cx, cy))
-                drawCircle(color = solid, radius = cx * 0.7f, center = Offset(cx, cy))
             }
             if (!isLast) {
+                // Hoje: trecho já vivido preenchido, o resto tracejado
                 Canvas(modifier = Modifier.width(2.dp).height(80.dp)) {
-                    drawLine(
-                        color = connectorColor,
-                        start = Offset(size.width / 2f, 0f),
-                        end = Offset(size.width / 2f, size.height),
-                        strokeWidth = size.width,
-                    )
+                    val x = size.width / 2f
+                    val split = size.height * progress
+                    if (isToday) {
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(x, split),
+                            end = Offset(x, size.height),
+                            strokeWidth = size.width,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)),
+                        )
+                        if (split > 0f) {
+                            drawLine(doneColor, Offset(x, 0f), Offset(x, split), strokeWidth = size.width)
+                        }
+                    } else {
+                        drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = size.width)
+                    }
                 }
             }
         }
 
         // Card
+        val interaction = remember { MutableInteractionSource() }
         Card(
             onClick = onOpen,
+            interactionSource = interaction,
             modifier = Modifier
                 .weight(1f)
-                .padding(bottom = if (isLast) 16.dp else 14.dp),
+                .padding(bottom = if (isLast) 16.dp else 14.dp)
+                .pressScale(interaction),
             colors = CardDefaults.cardColors(
                 containerColor = if (isHappeningNow) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
                                  else MaterialTheme.colorScheme.surfaceContainerLow
@@ -290,6 +394,8 @@ private fun TimelineRow(
                     size = 42.dp,
                     containerColor = container,
                     contentColor = solid,
+                    mood = moodFor(materia.status),
+                    breathe = isHappeningNow,
                 ) {
                     Icon(materia.icone, null, modifier = Modifier.size(22.dp))
                 }
